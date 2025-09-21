@@ -34,6 +34,13 @@ document.addEventListener('DOMContentLoaded', function() {
         AI_SPEAKING: 'ai-speaking',
         PROCESSING: 'processing'
     };
+    
+    // Animation State Management Variables
+    let currentAnimationState = AnimationStates.IDLE;
+    let processingTimer = null;
+    let userSpeakingTimer = null;
+    let aiSpeakingEndTimer = null;
+    let isAIBufferActive = false;
 
     // Career Counselor State
     const CareerState = {
@@ -264,6 +271,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Animation Management
     function setAnimationState(state) {
+        // Clear any existing timers when changing state
+        if (state !== AnimationStates.PROCESSING && processingTimer) {
+            clearTimeout(processingTimer);
+            processingTimer = null;
+        }
+        if (state !== AnimationStates.USER_SPEAKING && userSpeakingTimer) {
+            clearTimeout(userSpeakingTimer);
+            userSpeakingTimer = null;
+        }
+        if (state !== AnimationStates.AI_SPEAKING && aiSpeakingEndTimer) {
+            clearTimeout(aiSpeakingEndTimer);
+            aiSpeakingEndTimer = null;
+        }
+        
+        currentAnimationState = state;
+        
         const animations = document.querySelectorAll('.animation-state');
         animations.forEach(anim => anim.classList.remove('active'));
         
@@ -290,6 +313,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Send state change via Socket.IO for logging
         socket.emit('state_change', { state });
+        console.log('Animation state update:', state);
     }
 
     // Start Conversation
@@ -439,15 +463,24 @@ document.addEventListener('DOMContentLoaded', function() {
             session: {
                 instructions: getCareerCounselorPrompt(),
                 modalities: ["text", "audio"],
+                temperature: 0.6,
                 tools: getCareerTools(),
                 voice: "ash",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
+                input_audio_transcription: {
+                    model: "gpt-4o-transcribe",
+                    // prompt: "You must translate & transcribe only in English."
+                },
+                input_audio_noise_reduction: {
+                    type: "far_field"
+                },
                 turn_detection: {
                     type: "server_vad",
-                    threshold: 0.5,
+                    threshold: 0.4,
                     prefix_padding_ms: 300,
-                    silence_duration_ms: 350,
+                    silence_duration_ms: 600,
+                    // interrupt_response: false
                 }
             }
         };
@@ -563,7 +596,7 @@ Use: When all questions answered OR student requests to end
 Use: User wants to pause/stop/take break or similar
 
 ## trigger_logout()
-Use: User says quit/exit/logout/end session or similar
+Use: User says end session/quit/exit/logout or similar
 
 # Core Instructions
 - Must introduce yourself and explain purpose at start, and mention the languages(only English, Hindi and Hinglish) you support (Hello ${userFirstName}!, I'm your career counseling assistant, and I'm here to help you navigate your career path. We'll go through some questions to understand your interests and concerns better...language...)
@@ -573,7 +606,9 @@ Use: User says quit/exit/logout/end session or similar
 - Be as Human as possible, Not too much formal not too casual. Do not talk to much with extras as student do not like this.
 - Wait for students to response after each question and keep the session engaging and entertaining
 - Use the student's name "${userFirstName}" throughout the conversation to keep it engaging.
-- In case of Hinglish or Hindi language, you must write Hindi with English words i.e., English alphabet because Hindi text are not supported. It a constain keep this in mind
+- In case of Hinglish or Hindi language, you must write Hindi with English words i.e., English alphabet because Hindi text are not supported. It's a constrain keep this in mind
+- If user ask to change the language change it.
+- Only respond to clear audio or text. If audio is unclear/partial/noisy/silent, ask for clarification 
 
 # Question Flow (15 Questions)
 1. **Introduction**: Welcome, explain 10-15 questions process
@@ -624,7 +659,7 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
             {
                 type: "function",
                 name: "detect_user_language",
-                description: "Detect the language used by the user in their response. This tool MUST be called for EVERY user input to determine if they are speaking in English or Hinglish(Hindi). This ensures the counselor responds in the appropriate language.",
+                description: "Detect the language used by the user in their response. This tool MUST be called for EVERY user input to determine if they are speaking in English or Hinglish(Hindi). This ensures the counselor responds in the appropriate language. Also if user explicitly ask to change the language then change it to asked language.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -935,20 +970,95 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
                     handleResponseDone(message);
                     break;
                 case "response.audio.delta":
-                    // Audio is being received
-                    setAnimationState(AnimationStates.AI_SPEAKING);
+                case "response.audio_transcript.delta":
+                    // AI is speaking - set state and mark buffer as active
+                    isAIBufferActive = true;
+                    if (currentAnimationState !== AnimationStates.AI_SPEAKING) {
+                        setAnimationState(AnimationStates.AI_SPEAKING);
+                    }
+                    break;
+                case "output_audio_buffer.started":
+                    console.log("Audio buffer started");
+                    // Buffer has started playing - AI is definitely speaking
+                    isAIBufferActive = true;
+                    if (currentAnimationState !== AnimationStates.AI_SPEAKING) {
+                        setAnimationState(AnimationStates.AI_SPEAKING);
+                    }
+                    break;
+                case "response.audio.done":
+                    console.log("Audio response done");
+                    // Don't change state here - buffer is still playing
+                    // Only set a long fallback timer in case buffer.stopped never arrives
+                    aiSpeakingEndTimer = setTimeout(() => {
+                        if (currentAnimationState === AnimationStates.AI_SPEAKING && isAIBufferActive) {
+                            console.log("Fallback: Setting idle after timeout");
+                            setAnimationState(AnimationStates.IDLE);
+                            isAIBufferActive = false;
+                        }
+                    }, 600000); // 5 second fallback (longer since buffer can take time)
+                    break;
+                case "output_audio_buffer.stopped":
+                    console.log("AI stopped speaking");
+                    // Clear any fallback timer
+                    if (aiSpeakingEndTimer) {
+                        clearTimeout(aiSpeakingEndTimer);
+                        aiSpeakingEndTimer = null;
+                    }
+                    // Now the buffer is truly empty, AI has stopped speaking
+                    isAIBufferActive = false;
+                    if (currentAnimationState === AnimationStates.AI_SPEAKING) {
+                        setAnimationState(AnimationStates.IDLE);
+                    }
                     break;
                 case "input_audio_buffer.speech_started":
                     console.log("User started speaking");
+                    // Clear any pending user speaking timer
+                    if (userSpeakingTimer) {
+                        clearTimeout(userSpeakingTimer);
+                        userSpeakingTimer = null;
+                    }
+                    // If AI is speaking and user interrupts, change to user speaking
+                    if (currentAnimationState === AnimationStates.AI_SPEAKING && isAIBufferActive) {
+                        console.log("User interrupted AI speaking");
+                    }
                     setAnimationState(AnimationStates.USER_SPEAKING);
+                    // Reset the current user message container for new speech
+                    currentUserMessage = null;
                     createUserMessageContainer();
                     break;
                 case "input_audio_buffer.speech_ended":
                     console.log("User stopped speaking");
-                    setAnimationState(AnimationStates.PROCESSING);
+                    // Add delay before switching to processing (1-1.5 seconds)
+                    userSpeakingTimer = setTimeout(() => {
+                        // Only change to processing if still in user speaking state
+                        if (currentAnimationState === AnimationStates.USER_SPEAKING) {
+                            setAnimationState(AnimationStates.PROCESSING);
+                        }
+                    }, 300); // Small delay to avoid flicker during natural pauses
+                    
+                    // Set processing timer for 1.5 seconds before going to idle
+                    processingTimer = setTimeout(() => {
+                        // Only go to idle if still in processing state
+                        if (currentAnimationState === AnimationStates.PROCESSING) {
+                            setAnimationState(AnimationStates.IDLE);
+                        }
+                    }, 1500); // 1.5 second processing time
                     break;
                 case "conversation.item.input_audio_transcription.completed":
                     handleUserTranscript(message);
+                    break;
+                case "conversation.item.input_audio_transcription.failed":
+                    console.error("Transcription failed");
+                    setAnimationState(AnimationStates.IDLE);
+                    break;
+                case "response.audio_transcript.done":
+                    console.log("AI transcript done");
+                    break;
+                case "response.content_part.done":
+                    console.log("Content part done");
+                    break;
+                case "response.output_item.done":
+                    console.log("Output item done");
                     break;
                 case "response.function_call_arguments.done":
                     handleToolCall(message);
@@ -1165,47 +1275,15 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
         socket.emit('career_summary', summary);
         
         // Display summary in chat
-        addMessage('system', 'Session summary has been generated and saved.');
+        addMessage('system', 'Session summary has been generated and saved. Ending session...');
+
+        handleLogout();
         
         return {
             success: true,
             summary_saved: true,
+            logout_triggered: true,
             session_id: CareerState.sessionId
-        };
-    }
-
-    function resumeSession(params) {
-        const { student_identifier } = params;
-        
-        // Try to load from localStorage
-        const keys = Object.keys(localStorage).filter(k => k.startsWith('career_paused_'));
-        
-        for (let key of keys) {
-            const pausedData = JSON.parse(localStorage.getItem(key));
-            if (pausedData.state.studentName === student_identifier || 
-                pausedData.session_id === student_identifier) {
-                
-                // Restore state
-                Object.assign(CareerState, pausedData.state);
-                CareerState.isPaused = false;
-                
-                // Remove pause data
-                localStorage.removeItem(key);
-                
-                addMessage('system', 'Previous conversation resumed.');
-                
-                return {
-                    success: true,
-                    resumed: true,
-                    current_question: CareerState.currentQuestion,
-                    completed_count: CareerState.completedQuestions.length
-                };
-            }
-        }
-        
-        return {
-            success: false,
-            error: "No paused session found for this student"
         };
     }
 
@@ -1360,28 +1438,44 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
     function handleUserTranscript(message) {
         if (currentUserMessage && message.transcript) {
             const content = currentUserMessage.querySelector('.message-content');
-            if (content.textContent === '...') {
-                content.textContent = message.transcript;
-            } else {
-                content.textContent = content.textContent + " " + message.transcript;
+            if (content) {
+                // Store the accumulated transcript internally but don't show it in UI
+                let accumulatedText = content.getAttribute('data-full-text') || '';
+                
+                // Accumulate transcript text internally
+                if (accumulatedText === '') {
+                    accumulatedText = message.transcript;
+                } else {
+                    accumulatedText = accumulatedText + " " + message.transcript;
+                }
+                
+                // Store the full text as a data attribute but keep UI showing "..."
+                content.setAttribute('data-full-text', accumulatedText);
+                content.textContent = '...';  // Always show "..." in UI
+                
+                scrollToBottom();
+                
+                // Log the complete accumulated message to server for session file (full text)
+                socket.emit('conversation_update', {
+                    role: 'User',
+                    message: accumulatedText,  // Send the full accumulated text to save in file
+                    state: 'user-speaking',
+                    session_id: CareerState.sessionId,
+                    question_context: CareerState.currentQuestion,
+                    language_detected: CareerState.currentLanguage
+                });
+                
+                // Log for debugging
+                console.log('User transcript received and sent to server:', accumulatedText);
             }
-            scrollToBottom();
-
-            
-            // Log conversation
-            socket.emit('conversation_update', {
-                role: 'User',
-                message: message.transcript,
-                state: 'user-speaking',
-                session_id: CareerState.sessionId,
-                question_context: CareerState.currentQuestion,
-                language_detected: CareerState.currentLanguage
-            });
         }
     }
 
     // Handle response done
     function handleResponseDone(message) {
+        // Reset the current user message container after response is complete
+        currentUserMessage = null;
+        
         if (message.response?.output?.[0]?.content?.[0]?.transcript) {
             const transcript = message.response.output[0].content[0].transcript;
             
@@ -1400,10 +1494,8 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
             });
         }
         
-        // Return to idle state
-        setTimeout(() => {
-            setAnimationState(AnimationStates.IDLE);
-        }, 500);
+        // Don't immediately return to idle - wait for buffer to clear
+        // The idle state will be set when output_audio_buffer.stopped is received
     }
 
     // Add message to chat
