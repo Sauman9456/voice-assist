@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 import logging
 from pathlib import Path
 import time
+from azure.storage.blob import BlobServiceClient, ContentSettings
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
 # Load environment variables
 load_dotenv()
@@ -29,13 +31,110 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create sessions directory if it doesn't exist
+# Azure Blob Storage configuration
+AZURE_CONNECTION_STRING = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
+CONTAINER_NAME = os.getenv('CONTAINER_NAME', 'new-voice-assist')
+STORAGE_ACCOUNT_NAME = os.getenv('STORAGE_ACCOUNT_NAME', 'recruitmentresume')
+
+# Initialize Azure Blob Storage client
+blob_service_client = None
+container_client = None
+
+try:
+    if AZURE_CONNECTION_STRING and AZURE_CONNECTION_STRING != 'YOUR_AZURE_STORAGE_CONNECTION_STRING_HERE':
+        blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+        container_client = blob_service_client.get_container_client(CONTAINER_NAME)
+        
+        # Ensure container exists
+        try:
+            container_client.get_container_properties()
+        except ResourceNotFoundError:
+            container_client = blob_service_client.create_container(CONTAINER_NAME)
+            logger.info(f"Created container: {CONTAINER_NAME}")
+        
+        logger.info("Azure Blob Storage connected successfully")
+    else:
+        logger.warning("Azure Storage connection string not configured. Using local storage fallback.")
+except Exception as e:
+    logger.error(f"Failed to initialize Azure Blob Storage: {e}")
+    logger.warning("Using local storage fallback.")
+
+# Create local sessions directory as fallback
 SESSIONS_DIR = Path('sessions')
 SESSIONS_DIR.mkdir(exist_ok=True)
 
-# Create career summaries directory
+# Create career summaries directory as fallback
 CAREER_DIR = Path('sessions/career_summaries')
 CAREER_DIR.mkdir(exist_ok=True, parents=True)
+
+# Azure Storage Helper Functions
+class AzureStorageManager:
+    @staticmethod
+    def save_to_blob(blob_name, data, content_type='application/json'):
+        """Save data to Azure Blob Storage"""
+        if not container_client:
+            return None
+        
+        try:
+            blob_client = container_client.get_blob_client(blob_name)
+            
+            # Convert data to JSON string if it's a dict or list
+            if isinstance(data, (dict, list)):
+                data = json.dumps(data, indent=2, ensure_ascii=False)
+            
+            # Upload the blob
+            blob_client.upload_blob(
+                data,
+                overwrite=True,
+                content_settings=ContentSettings(content_type=content_type)
+            )
+            
+            logger.info(f"Successfully saved blob: {blob_name}")
+            return f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER_NAME}/{blob_name}"
+        except Exception as e:
+            logger.error(f"Failed to save to Azure Blob Storage: {e}")
+            return None
+    
+    @staticmethod
+    def read_from_blob(blob_name):
+        """Read data from Azure Blob Storage"""
+        if not container_client:
+            return None
+        
+        try:
+            blob_client = container_client.get_blob_client(blob_name)
+            download_stream = blob_client.download_blob()
+            data = download_stream.readall()
+            
+            # Try to parse as JSON
+            try:
+                return json.loads(data)
+            except:
+                return data.decode('utf-8')
+        except Exception as e:
+            logger.error(f"Failed to read from Azure Blob Storage: {e}")
+            return None
+    
+    @staticmethod
+    def append_to_blob(blob_name, new_data):
+        """Append data to existing blob or create new one"""
+        if not container_client:
+            return None
+        
+        try:
+            # Try to read existing data
+            existing_data = AzureStorageManager.read_from_blob(blob_name)
+            if existing_data and isinstance(existing_data, list):
+                existing_data.append(new_data)
+            else:
+                existing_data = [new_data]
+            
+            # Save updated data
+            return AzureStorageManager.save_to_blob(blob_name, existing_data)
+        except Exception as e:
+            logger.error(f"Failed to append to blob: {e}")
+            # Try to create new blob with single item
+            return AzureStorageManager.save_to_blob(blob_name, [new_data])
 
 # Session management
 class SessionManager:
@@ -49,23 +148,40 @@ class SessionManager:
         
         # Clean email for filename
         safe_email = user_email.replace('@', '_at_').replace('.', '_')
-        session_file = SESSIONS_DIR / f"{safe_email}_{timestamp}.txt"
+        
+        # Azure blob name in session folder
+        blob_name = f"session/{safe_email}_{timestamp}.json"
+        
+        # Local file path as fallback
+        session_file = SESSIONS_DIR / f"{safe_email}_{timestamp}.json"
         
         session_data = {
             'id': session_id,
             'email': user_email,
             'name': user_name,
-            'start_time': datetime.now(),
-            'file_path': session_file,
+            'start_time': datetime.now().isoformat(),
+            'blob_name': blob_name,
+            'file_path': str(session_file),
             'conversation': []
         }
         
-        # Write initial session info to file
-        with open(session_file, 'w', encoding='utf-8') as f:
-            f.write(f"Session Started: {datetime.now().isoformat()}\n")
-            f.write(f"User: {user_name} ({user_email})\n")
-            f.write(f"Session ID: {session_id}\n")
-            f.write("-" * 80 + "\n\n")
+        # Initialize session with metadata
+        initial_data = {
+            'session_id': session_id,
+            'user': {
+                'name': user_name,
+                'email': user_email
+            },
+            'start_time': datetime.now().isoformat(),
+            'messages': []
+        }
+        
+        # Try to save to Azure, fallback to local
+        azure_url = AzureStorageManager.save_to_blob(blob_name, initial_data)
+        if not azure_url:
+            # Fallback to local storage
+            with open(session_file, 'w', encoding='utf-8') as f:
+                json.dump(initial_data, f, indent=2, ensure_ascii=False)
         
         self.active_sessions[session_id] = session_data
         logger.info(f"Created session {session_id} for {user_email}")
@@ -78,21 +194,52 @@ class SessionManager:
             return
         
         session_data = self.active_sessions[session_id]
-        timestamp = datetime.now().strftime('%H:%M:%S')
+        timestamp = datetime.now().isoformat()
+        
+        # Create message entry
+        message_entry = {
+            'timestamp': timestamp,
+            'role': 'user' if role in ['User', 'Career Response'] else 'assistant',
+            'content': message
+        }
         
         # Add to memory
-        session_data['conversation'].append({
-            'timestamp': timestamp,
-            'role': role,
-            'message': message
-        })
+        session_data['conversation'].append(message_entry)
         
-        # Write to file immediately
-        try:
-            with open(session_data['file_path'], 'a', encoding='utf-8') as f:
-                f.write(f"[{timestamp}] {role}: {message}\n")
-        except Exception as e:
-            logger.error(f"Error writing to session file: {e}")
+        # Try to update Azure blob
+        blob_name = session_data['blob_name']
+        existing_data = AzureStorageManager.read_from_blob(blob_name)
+        
+        if existing_data:
+            # Update Azure blob
+            if 'messages' not in existing_data:
+                existing_data['messages'] = []
+            existing_data['messages'].append(message_entry)
+            AzureStorageManager.save_to_blob(blob_name, existing_data)
+        else:
+            # Fallback to local storage
+            try:
+                file_path = Path(session_data['file_path'])
+                if file_path.exists():
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        local_data = json.load(f)
+                else:
+                    local_data = {
+                        'session_id': session_id,
+                        'user': {
+                            'name': session_data.get('name', 'Unknown'),
+                            'email': session_data.get('email', 'Unknown')
+                        },
+                        'start_time': session_data.get('start_time', datetime.now().isoformat()),
+                        'messages': []
+                    }
+                
+                local_data['messages'].append(message_entry)
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(local_data, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"Error writing to local session file: {e}")
     
     def end_session(self, session_id):
         """End a session and finalize the log file"""
@@ -100,16 +247,38 @@ class SessionManager:
             return
         
         session_data = self.active_sessions[session_id]
+        end_time = datetime.now()
         
-        # Write session end to file
-        try:
-            with open(session_data['file_path'], 'a', encoding='utf-8') as f:
-                f.write(f"\n{'-' * 80}\n")
-                f.write(f"Session Ended: {datetime.now().isoformat()}\n")
-                duration = datetime.now() - session_data['start_time']
-                f.write(f"Duration: {duration}\n")
-        except Exception as e:
-            logger.error(f"Error finalizing session file: {e}")
+        # Calculate duration
+        start_time = datetime.fromisoformat(session_data['start_time'])
+        duration = str(end_time - start_time)
+        
+        # Update session data with end information
+        blob_name = session_data['blob_name']
+        existing_data = AzureStorageManager.read_from_blob(blob_name)
+        
+        if existing_data:
+            # Update Azure blob
+            existing_data['end_time'] = end_time.isoformat()
+            existing_data['duration'] = duration
+            existing_data['total_messages'] = len(existing_data.get('messages', []))
+            AzureStorageManager.save_to_blob(blob_name, existing_data)
+        else:
+            # Fallback to local storage
+            try:
+                file_path = Path(session_data['file_path'])
+                if file_path.exists():
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        local_data = json.load(f)
+                    
+                    local_data['end_time'] = end_time.isoformat()
+                    local_data['duration'] = duration
+                    local_data['total_messages'] = len(local_data.get('messages', []))
+                    
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(local_data, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"Error finalizing local session file: {e}")
         
         del self.active_sessions[session_id]
         logger.info(f"Ended session {session_id}")
@@ -200,7 +369,7 @@ class CareerCounselingManager:
         return session
     
     def save_summary(self, career_session_id, summary_data):
-        """Save career counseling summary to file"""
+        """Save career counseling summary to Azure Blob Storage"""
         if career_session_id not in self.career_sessions:
             return None
         
@@ -209,6 +378,11 @@ class CareerCounselingManager:
         # Create filename
         safe_email = session['user_email'].replace('@', '_at_').replace('.', '_')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Azure blob name in summary folder
+        blob_name = f"summary/{safe_email}_{timestamp}_summary.json"
+        
+        # Local file path as fallback
         summary_file = CAREER_DIR / f"{safe_email}_{timestamp}_summary.json"
         
         # Prepare complete summary
@@ -231,16 +405,23 @@ class CareerCounselingManager:
             'recommendations': summary_data.get('recommendations', [])
         }
         
-        # Save to file
-        try:
-            with open(summary_file, 'w', encoding='utf-8') as f:
-                json.dump(complete_summary, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Saved career summary to {summary_file}")
-            return str(summary_file)
-        except Exception as e:
-            logger.error(f"Error saving career summary: {e}")
-            return None
+        # Try to save to Azure, fallback to local
+        azure_url = AzureStorageManager.save_to_blob(blob_name, complete_summary)
+        
+        if azure_url:
+            logger.info(f"Saved career summary to Azure: {blob_name}")
+            return azure_url
+        else:
+            # Fallback to local storage
+            try:
+                with open(summary_file, 'w', encoding='utf-8') as f:
+                    json.dump(complete_summary, f, indent=2, ensure_ascii=False)
+                
+                logger.info(f"Saved career summary locally: {summary_file}")
+                return str(summary_file)
+            except Exception as e:
+                logger.error(f"Error saving career summary: {e}")
+                return None
 
 # Initialize career counseling manager
 career_manager = CareerCounselingManager()
@@ -459,9 +640,9 @@ def handle_career_summary(data):
         return
     
     # Save the summary
-    summary_file = career_manager.save_summary(career_session_id, data)
+    summary_location = career_manager.save_summary(career_session_id, data)
     
-    if summary_file:
+    if summary_location:
         # Log to main session
         total_questions = data.get('total_questions_answered', 0)
         session_manager.log_conversation(
@@ -472,7 +653,7 @@ def handle_career_summary(data):
         
         emit('summary_saved', {
             'success': True,
-            'file': summary_file,
+            'location': summary_location,
             'message': 'Career counseling summary saved successfully'
         })
         
@@ -511,6 +692,12 @@ def handle_career_progress():
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_ENV', 'development') == 'development'
+    
+    # Check Azure Storage connectivity
+    if container_client:
+        logger.info(f"Azure Storage configured: Container '{CONTAINER_NAME}' in account '{STORAGE_ACCOUNT_NAME}'")
+    else:
+        logger.warning("Azure Storage not configured - using local file storage")
     
     logger.info(f"Starting Flask app on port {port}")
     socketio.run(app, host='0.0.0.0', port=port, debug=debug)
