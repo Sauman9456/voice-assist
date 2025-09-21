@@ -50,7 +50,9 @@ document.addEventListener('DOMContentLoaded', function() {
             'skills', 'ai_fears', 'industry_preference', 'work_values',
             'learning_style', 'obstacles', 'timeline', 'immediate_need'
         ],
-        optionalQuestions: ['role_models', 'experience', 'support']
+        optionalQuestions: ['role_models', 'experience', 'support'],
+        currentLanguage: 'english',  // Track current language: 'english' or 'hinglish'
+        previousLanguage: 'english'   // Track previous turn language
     };
 
     // Initialize
@@ -259,6 +261,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return 'career_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
 
+
     // Animation Management
     function setAnimationState(state) {
         const animations = document.querySelectorAll('.animation-state');
@@ -442,6 +445,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 output_audio_format: "pcm16",
                 turn_detection: {
                     type: "server_vad",
+                    threshold: 0.5,
+                    prefix_padding_ms: 300,
+                    silence_duration_ms: 350,
                 }
             }
         };
@@ -507,10 +513,38 @@ You are conducting a survey interview with 8-15 questions to understand:
 - Acknowledge their answer briefly before moving to next question
 
 ## Language
-- Conversation will be in English & Hinglish (blends English and Hindi)
-- If User speak in hindi then respond in Hinglish else if user speak in english response in English and always start in english
-- Use clear, simple language appropriate for university students
-- Avoid jargon unless explaining career-specific terms
+# CRITICAL LANGUAGE INSTRUCTIONS
+Current Turn Language Detected: ${CareerState.currentLanguage.toUpperCase()}
+Previous Turn Language: ${CareerState.previousLanguage.toUpperCase()}
+
+RESPONSE LANGUAGE RULES:
+${CareerState.currentLanguage === 'hinglish' ? `
+- YOU MUST RESPOND IN HINGLISH for this turn
+- Hinglish is a casual mix of English and Hindi used by Indian students
+- Example Hinglish: "Aapka interest kis field mein hai? Like tech, business ya kuch aur?"
+- Use Hinglish words naturally mixed with English: bhi, kya, kaise, achha, thik hai, matlab, samjh
+- Keep it semi-formal and friendly, not too formal as Indians prefer casual tone
+- Examples of Hinglish responses:
+  * "Achha, that's interesting! Aap currently kya padh rahe hain?"
+  * "Main samjh sakti hun, bahut students ko yeh confusion hota hai"
+  * "Thik hai, let me note that down. Ab bataiye ki..."
+  * "Bilkul sahi! Aapke skills kaafi achhe lag rahe hain"
+` : `
+- YOU MUST RESPOND IN ENGLISH for this turn
+- Use clear, simple English appropriate for university students
+- Keep the tone professional yet friendly
+- Avoid complex vocabulary unless necessary for career terms
+- Examples of English responses:
+  * "That's really insightful! What subjects interest you the most?"
+  * "I understand completely, many students face this confusion"
+  * "Great, let me capture that. Now, could you tell me about..."
+  * "Excellent! Your skills seem quite promising"
+`}
+
+- Always start the first conversation in English
+- If no language detected in current turn, use the previous turn's language
+- Students are from India, so adjust formality accordingly (semi-formal is preferred)
+- Avoid overly formal language as Indian students prefer friendly communication
 
 ## Pacing
 - Speak at a moderate, calming pace
@@ -526,9 +560,21 @@ You are conducting a survey interview with 8-15 questions to understand:
 - Pronounce "DevOps" as "dev-ops"
 - Pronounce "SQL" as "sequel"
 - Pronounce "API" as "A-P-I"
+etc..
 
 # Tools
 - Before any tool call, provide a brief acknowledgment like "Let me note that down" or "I'm capturing that"
+
+## CRITICAL: Language Detection Requirement
+- You MUST call detect_user_language for EVERY user input FIRST before any other actions
+- This is mandatory for every turn to ensure you respond in the correct language
+- Do not skip this step even if the language seems obvious
+- The tool will update the language state and ensure proper language continuity
+
+## detect_user_language(user_text, detected_language, confidence, Hinglish_words_found)
+Use when: ALWAYS - for EVERY user input as the FIRST action
+Do NOT skip: This is mandatory for proper language detection
+Purpose: Detects if user is speaking English or Hindi/Hinglish and updates language state
 
 ## track_survey_response(question_id, response)
 Use when: Student provides a substantive answer to a survey question
@@ -583,7 +629,7 @@ Goal: Welcome student and explain the process
 How to respond:
 - Introduce yourself as their career counseling assistant
 - Explain you'll ask 10-15 questions to understand their situation
-- Assure them there are no wrong answers, mention what language you support that is english and Hindi do not mention Hinglish here.
+- Assure them there are no wrong answers, mention what language you support that is english and Hindi do not mention Hinglish here buy always response in Hinglish as student think Hinglish is Hindi.
 - Use the student's name "${userName.split(" ")[0]}" throughout the conversation.
 Sample phrases:
 - "Hello ${userName.split(" ")[0]}! I'm your career counseling assistant, and I'm here to help you navigate your career path."
@@ -800,6 +846,36 @@ ${Object.entries(CareerState.responses).map(([qId, resp]) =>
     // Get Career Tools Definition (from realtime_tools.py)
     function getCareerTools() {
         return [
+            {
+                type: "function",
+                name: "detect_user_language",
+                description: "Detect the language used by the user in their response. This tool MUST be called for EVERY user input to determine if they are speaking in English or Hinglish(Hindi). This ensures the counselor responds in the appropriate language.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        user_text: {
+                            type: "string",
+                            description: "The user's input text to analyze for language detection"
+                        },
+                        detected_language: {
+                            type: "string",
+                            description: "The detected language of the user's input",
+                            enum: ["english", "hinglishhinglish"]
+                        },
+                        confidence: {
+                            type: "string",
+                            description: "Confidence level of the language detection",
+                            enum: ["high", "medium", "low"]
+                        },
+                        Hinglish_words_found: {
+                            type: "array",
+                            items: { type: "string" },
+                            description: "List of Hinglish words or patterns detected in the input"
+                        }
+                    },
+                    required: ["user_text", "detected_language"]
+                }
+            },
             {
                 type: "function",
                 name: "track_survey_response",
@@ -1124,6 +1200,9 @@ ${Object.entries(CareerState.responses).map(([qId, resp]) =>
             let result = {};
 
             switch(message.name) {
+                case 'detect_user_language':
+                    result = detectUserLanguage(args);
+                    break;
                 case 'track_survey_response':
                     result = trackResponse(args);
                     break;
@@ -1355,6 +1434,32 @@ ${Object.entries(CareerState.responses).map(([qId, resp]) =>
         };
     }
 
+    // Handler for detect_user_language tool (LLM-based detection)
+    function detectUserLanguage(params) {
+        const { user_text, detected_language, confidence, Hinglish_words_found } = params;
+        
+        // Update language state based on LLM's detection
+        CareerState.previousLanguage = CareerState.currentLanguage;
+        CareerState.currentLanguage = detected_language;
+        
+        // Log the LLM-based detection
+        console.log(`LLM Language Detection: ${detected_language} (Confidence: ${confidence})`);
+        if (Hinglish_words_found && Hinglish_words_found.length > 0) {
+            console.log(`Hinglish words detected: ${Hinglish_words_found.join(', ')}`);
+        }
+        
+        // Save the updated language state
+        saveSessionToStorage();
+        
+        return {
+            success: true,
+            language_updated: true,
+            current_language: detected_language,
+            previous_language: CareerState.previousLanguage,
+            message: `Language detected as ${detected_language} with ${confidence} confidence`
+        };
+    }
+
     // Additional tool handlers for new tools from realtime_tools.py
     function provideClarification(params) {
         const { question_id, clarification_type } = params;
@@ -1487,13 +1592,15 @@ ${Object.entries(CareerState.responses).map(([qId, resp]) =>
             }
             scrollToBottom();
 
+            
             // Log conversation
             socket.emit('conversation_update', {
                 role: 'User',
                 message: message.transcript,
                 state: 'user-speaking',
                 session_id: CareerState.sessionId,
-                question_context: CareerState.currentQuestion
+                question_context: CareerState.currentQuestion,
+                language_detected: CareerState.currentLanguage
             });
         }
     }
