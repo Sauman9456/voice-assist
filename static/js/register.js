@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const buttonLoader = submitButton.querySelector('.btn-loading');
 
     // Fixed password for validation
-    const CORRECT_PASSWORD = 'test@1234';
+    const CORRECT_PASSWORD = 'test@1234@test@456';
 
     // Form validation
     function validateName() {
