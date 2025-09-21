@@ -1,0 +1,8 @@
+Session Started: 2025-09-21T07:10:24.114070
+User: Saumaan Aqeel Ahmad Momin (sauman.1099@gmail.com)
+Session ID: b706c8ba-d683-4a86-a90c-01cdc73b12a6
+--------------------------------------------------------------------------------
+
+[07:10:34] Assistant: Hello! I'm so glad you're here. My name is Saumaan, and I'm here to help you figure out your career path. We’ll go through about 10 to 15 questions to understand your situation, interests, skills, and any concerns you have. Let’s take it step-by-step. Does that sound good to you?
+[07:11:04] Assistant: Great, I’m glad you’re on board. Let’s begin with the first question. Could you tell me what year you’re currently in and what your major or field of study is?
+[07:11:29] Assistant: बहुत बढ़िया, मैंने आपकी जानकारी नोट कर ली है। अब मैं समझना चाहूँगा कि आपके लिए करियर प्लानिंग में सबसे बड़ी उलझन या चुनौती क्या है। कहीं कोई specific डर या confusion है जो आप महसूस कर रहे हैं?

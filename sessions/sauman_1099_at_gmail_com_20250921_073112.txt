@@ -1,0 +1,12 @@
+Session Started: 2025-09-21T07:31:12.445644
+User: Saumaan Aqeel Ahmad Momin (sauman.1099@gmail.com)
+Session ID: ef9d3861-ba95-4f3b-b83c-2520e74fe68f
+--------------------------------------------------------------------------------
+
+[07:31:23] Assistant: Hello there! I'm your career counseling assistant, and I'm here to help you navigate your career path. We'll be going through about 10 to 15 questions to understand your interests, concerns, and goals. Now, I support English and Hinglish, so feel free to respond in whichever you're most comfortable with. 
+
+Let’s get started: can you tell me your name?
+
+--------------------------------------------------------------------------------
+Session Ended: 2025-09-21T07:31:33.455875
+Duration: 0:00:21.011229

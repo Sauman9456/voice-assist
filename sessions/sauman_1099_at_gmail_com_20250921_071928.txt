@@ -1,0 +1,15 @@
+Session Started: 2025-09-21T07:19:28.222961
+User: Saumaan Aqeel Ahmad Momin (sauman.1099@gmail.com)
+Session ID: aeff31ea-051e-4680-81e1-0f0ef8143ee6
+--------------------------------------------------------------------------------
+
+[07:19:41] Assistant: Hello! I'm your career counseling assistant, and I'm here to help you navigate your career path. We’ll go through about 10 to 15 questions to understand your situation, your interests, and any concerns you might have. I can speak to you in English or in Hinglish, so feel free to respond however you’re most comfortable. Let’s get started. Could you tell me your name, just so I can address you properly?
+[07:20:13] Assistant: ठीक है चोहान, चलिए आगे बढ़ते हैं। अब मैं जानना चाहूंगा कि आप अभी किस साल में पढ़ रहे हैं और आपका मुख्य विषय या फील्ड क्या है?
+[07:20:39] Assistant: Thank you for sharing that, चोहान. Now, could you tell me about your current academic status? For example, what year are you in, and what’s your major or field of study?
+[07:21:11] Assistant: Thanks for sharing that, Chohan. Let's move on to the next question. 
+
+Could you tell me which year of your studies you're currently in and what your major or field of study is?
+
+--------------------------------------------------------------------------------
+Session Ended: 2025-09-21T07:21:27.786876
+Duration: 0:01:59.565927

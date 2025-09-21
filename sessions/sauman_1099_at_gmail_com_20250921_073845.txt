@@ -1,0 +1,7 @@
+Session Started: 2025-09-21T07:38:45.455725
+User: Saumaan Aqeel Ahmad Momin (sauman.1099@gmail.com)
+Session ID: 6af409ae-306c-40d3-8c17-fcce8d50ec06
+--------------------------------------------------------------------------------
+
+[07:38:57] Assistant: Hello Saumaan! I'm your career counseling assistant, and I'm here to help you navigate your career path. We'll go through a structured set of about 10 to 15 questions to understand your interests, skills, and concerns better. You can speak to me in English, and I’m also able to understand Hinglish if it’s more comfortable for you. Let’s begin. First, could you tell me a bit about what’s on your mind regarding your career and what’s got you feeling lost?
+[07:39:37] Assistant: Thanks for letting me know, Saumaan. That’s completely fine. We’ll still go through some questions to get a clearer picture of where you stand and what might help moving forward. Now, to start off, could you share which year you’re in at university and what your major or field of study is?
