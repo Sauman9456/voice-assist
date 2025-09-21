@@ -16,49 +16,82 @@ import atexit
 from azure.storage.blob import BlobServiceClient, ContentSettings, BlobType
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 import concurrent.futures
+from functools import lru_cache
+import asyncio
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Load environment variables
 load_dotenv()
 
-# Create Flask app
+# Create Flask app with optimizations
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', str(uuid.uuid4()))
 app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # 1 year cache for static files
 
-# Enable CORS and WebSocket support
+# Add proxy fix for Azure
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# Enable CORS and WebSocket support - auto-detect async mode
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# Configure logging
+# Detect the best async mode
+async_mode = None
+try:
+    import eventlet
+    async_mode = 'eventlet'
+except ImportError:
+    try:
+        import gevent
+        async_mode = 'gevent'
+    except ImportError:
+        async_mode = 'threading'
+
+# Configure logging - reduce verbosity
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Changed from INFO to WARNING to reduce logging overhead
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Performance configuration
-BATCH_SIZE = 10  # Number of messages to batch before writing
-FLUSH_INTERVAL = 5  # Seconds between automatic flushes
-MAX_WORKERS = 3  # Number of background workers for Azure operations
-USE_APPEND_BLOB = True  # Use append blobs for better append performance
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode=async_mode,  # Auto-detect best async mode
+    ping_timeout=60,
+    ping_interval=25,
+    logger=False,
+    engineio_logger=False
+)
+
+logger.info(f"SocketIO initialized with async_mode: {async_mode}")
+
+# Performance configuration - optimized for Azure
+BATCH_SIZE = 25  # Increased batch size
+FLUSH_INTERVAL = 10  # Increased flush interval
+MAX_WORKERS = 5  # Increased workers for concurrent operations
+USE_APPEND_BLOB = True
+CACHE_TTL = 300  # 5 minutes cache TTL
 
 # Azure Blob Storage configuration
 AZURE_CONNECTION_STRING = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
 CONTAINER_NAME = os.getenv('CONTAINER_NAME', 'new-voice-assist')
 STORAGE_ACCOUNT_NAME = os.getenv('STORAGE_ACCOUNT_NAME', 'recruitmentresume')
 
-# Initialize Azure Blob Storage client with connection pooling
+# Initialize Azure Blob Storage client with optimized connection pooling
 blob_service_client = None
 container_client = None
 thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
 try:
     if AZURE_CONNECTION_STRING and AZURE_CONNECTION_STRING != 'YOUR_AZURE_STORAGE_CONNECTION_STRING_HERE':
-        # Configure connection pooling
+        # Configure connection pooling with more aggressive settings
         blob_service_client = BlobServiceClient.from_connection_string(
             AZURE_CONNECTION_STRING,
-            max_single_get_size=4*1024*1024,  # 4MB chunks
-            max_chunk_get_size=4*1024*1024    # 4MB chunks
+            max_single_get_size=8*1024*1024,  # 8MB chunks
+            max_chunk_get_size=8*1024*1024,   # 8MB chunks
+            max_single_put_size=64*1024*1024, # 64MB for single put
+            max_block_size=4*1024*1024        # 4MB blocks
         )
         container_client = blob_service_client.get_container_client(CONTAINER_NAME)
         
@@ -88,9 +121,11 @@ CAREER_DIR.mkdir(exist_ok=True, parents=True)
 class OptimizedAzureStorageManager:
     def __init__(self):
         self.cache = {}  # In-memory cache for session data
+        self.cache_timestamps = {}  # Track cache age
         self.message_queue = defaultdict(list)  # Queue messages for batching
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()  # Use RLock for recursive locking
         self.flush_timer = None
+        self.write_futures = {}  # Track async write operations
         self.start_periodic_flush()
         
     def start_periodic_flush(self):
@@ -105,15 +140,34 @@ class OptimizedAzureStorageManager:
         """Periodically flush all queued messages"""
         try:
             self.flush_all_queues()
+            self._cleanup_old_cache()  # Clean old cache entries
         except Exception as e:
             logger.error(f"Error in periodic flush: {e}")
         finally:
             self.start_periodic_flush()
     
+    def _cleanup_old_cache(self):
+        """Remove cache entries older than TTL"""
+        current_time = time.time()
+        with self.lock:
+            keys_to_remove = [
+                key for key, timestamp in self.cache_timestamps.items()
+                if current_time - timestamp > CACHE_TTL
+            ]
+            for key in keys_to_remove:
+                del self.cache[key]
+                del self.cache_timestamps[key]
+    
     def save_to_blob_async(self, blob_name, data, content_type='application/json'):
-        """Save data to Azure Blob Storage asynchronously"""
+        """Save data to Azure Blob Storage asynchronously with deduplication"""
         if not container_client:
             return None
+        
+        # Check if we already have a pending write for this blob
+        with self.lock:
+            if blob_name in self.write_futures:
+                # Return existing future to avoid duplicate writes
+                return self.write_futures[blob_name]
         
         def _save():
             try:
@@ -125,56 +179,102 @@ class OptimizedAzureStorageManager:
                 else:
                     data_str = data
                 
-                # Upload the blob
+                # Upload the blob with optimized settings
                 blob_client.upload_blob(
                     data_str,
                     overwrite=True,
-                    content_settings=ContentSettings(content_type=content_type)
+                    content_settings=ContentSettings(
+                        content_type=content_type,
+                        cache_control='max-age=3600'  # 1 hour browser cache
+                    ),
+                    metadata={'timestamp': str(time.time())}
                 )
                 
-                logger.debug(f"Successfully saved blob: {blob_name}")
+                # Update cache
+                with self.lock:
+                    self.cache[blob_name] = data if isinstance(data, dict) else json.loads(data_str)
+                    self.cache_timestamps[blob_name] = time.time()
+                    # Remove from pending writes
+                    if blob_name in self.write_futures:
+                        del self.write_futures[blob_name]
+                
                 return f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER_NAME}/{blob_name}"
             except Exception as e:
                 logger.error(f"Failed to save to Azure Blob Storage: {e}")
+                with self.lock:
+                    if blob_name in self.write_futures:
+                        del self.write_futures[blob_name]
                 return None
         
         # Submit to thread pool for async execution
         future = thread_pool.submit(_save)
+        
+        # Track the future
+        with self.lock:
+            self.write_futures[blob_name] = future
+        
         return future
     
-    def get_cached_or_read(self, blob_name):
-        """Get data from cache or read from blob if not cached"""
-        with self.lock:
-            if blob_name in self.cache:
-                return self.cache[blob_name]
-        
-        # Read from blob if not in cache
-        data = self.read_from_blob(blob_name)
-        if data:
-            with self.lock:
-                self.cache[blob_name] = data
-        return data
-    
-    def read_from_blob(self, blob_name):
-        """Read data from Azure Blob Storage"""
+    @lru_cache(maxsize=128)
+    def _get_blob_metadata(self, blob_name):
+        """Get blob metadata with caching"""
         if not container_client:
             return None
         
         try:
             blob_client = container_client.get_blob_client(blob_name)
-            download_stream = blob_client.download_blob()
-            data = download_stream.readall()
-            
-            # Try to parse as JSON
+            properties = blob_client.get_blob_properties()
+            return {
+                'size': properties.size,
+                'last_modified': properties.last_modified,
+                'etag': properties.etag
+            }
+        except:
+            return None
+    
+    def get_cached_or_read(self, blob_name):
+        """Get data from cache or read from blob if not cached"""
+        current_time = time.time()
+        
+        with self.lock:
+            # Check if we have valid cached data
+            if blob_name in self.cache and blob_name in self.cache_timestamps:
+                cache_age = current_time - self.cache_timestamps[blob_name]
+                if cache_age < CACHE_TTL:
+                    return self.cache[blob_name]
+        
+        # Read from blob if not in cache or cache expired
+        data = self.read_from_blob(blob_name)
+        if data:
+            with self.lock:
+                self.cache[blob_name] = data
+                self.cache_timestamps[blob_name] = current_time
+        return data
+    
+    def read_from_blob(self, blob_name):
+        """Read data from Azure Blob Storage with retry logic"""
+        if not container_client:
+            return None
+        
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                return json.loads(data)
-            except:
-                return data.decode('utf-8')
-        except ResourceNotFoundError:
-            return None
-        except Exception as e:
-            logger.error(f"Failed to read from Azure Blob Storage: {e}")
-            return None
+                blob_client = container_client.get_blob_client(blob_name)
+                download_stream = blob_client.download_blob()
+                data = download_stream.readall()
+                
+                # Try to parse as JSON
+                try:
+                    return json.loads(data)
+                except:
+                    return data.decode('utf-8')
+            except ResourceNotFoundError:
+                return None
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Failed to read from Azure Blob Storage after {max_retries} attempts: {e}")
+                    return None
+                time.sleep(0.5 * (attempt + 1))  # Exponential backoff
     
     def queue_message(self, blob_name, message_entry):
         """Queue a message for batched writing"""
@@ -214,8 +314,10 @@ class OptimizedAzureStorageManager:
             existing_data['messages'].extend(messages)
             
             # Update cache
+            current_time = time.time()
             with self.lock:
                 self.cache[blob_name] = existing_data
+                self.cache_timestamps[blob_name] = current_time
             
             # Write to blob
             blob_client = container_client.get_blob_client(blob_name)
@@ -224,10 +326,13 @@ class OptimizedAzureStorageManager:
             blob_client.upload_blob(
                 data_str,
                 overwrite=True,
-                content_settings=ContentSettings(content_type='application/json')
+                content_settings=ContentSettings(
+                    content_type='application/json',
+                    cache_control='max-age=3600'
+                ),
+                metadata={'timestamp': str(current_time)}
             )
             
-            logger.debug(f"Batch wrote {len(messages)} messages to {blob_name}")
         except Exception as e:
             logger.error(f"Failed to write batch to blob {blob_name}: {e}")
     
@@ -240,11 +345,18 @@ class OptimizedAzureStorageManager:
             with self.lock:
                 self._flush_blob_queue(blob_name)
     
-    def invalidate_cache(self, blob_name):
-        """Remove a blob from cache"""
+    def invalidate_cache(self, blob_name=None):
+        """Remove a blob from cache or clear all cache"""
         with self.lock:
-            if blob_name in self.cache:
-                del self.cache[blob_name]
+            if blob_name:
+                if blob_name in self.cache:
+                    del self.cache[blob_name]
+                if blob_name in self.cache_timestamps:
+                    del self.cache_timestamps[blob_name]
+            else:
+                # Clear all cache
+                self.cache.clear()
+                self.cache_timestamps.clear()
 
 # Initialize optimized storage manager
 storage_manager = OptimizedAzureStorageManager()
@@ -253,7 +365,7 @@ storage_manager = OptimizedAzureStorageManager()
 def cleanup():
     """Clean up resources on application exit"""
     storage_manager.flush_all_queues()
-    thread_pool.shutdown(wait=True)
+    thread_pool.shutdown(wait=True, cancel_futures=False)
     if storage_manager.flush_timer:
         storage_manager.flush_timer.cancel()
 
@@ -263,6 +375,7 @@ atexit.register(cleanup)
 class OptimizedSessionManager:
     def __init__(self):
         self.active_sessions = {}
+        self.session_lock = threading.RLock()
     
     def create_session(self, user_email, user_name):
         """Create a new user session with logging file"""
@@ -305,40 +418,49 @@ class OptimizedSessionManager:
             # Pre-cache the initial data
             with storage_manager.lock:
                 storage_manager.cache[blob_name] = initial_data
+                storage_manager.cache_timestamps[blob_name] = time.time()
         else:
             # Fallback to local storage
             with open(session_file, 'w', encoding='utf-8') as f:
                 json.dump(initial_data, f, indent=2, ensure_ascii=False)
         
-        self.active_sessions[session_id] = session_data
+        with self.session_lock:
+            self.active_sessions[session_id] = session_data
+        
         logger.info(f"Created session {session_id} for {user_email}")
         return session_id
     
     def log_conversation(self, session_id, role, message):
         """Log conversation to session file using optimized batching"""
-        if session_id not in self.active_sessions:
-            logger.warning(f"Session {session_id} not found")
-            return
+        with self.session_lock:
+            if session_id not in self.active_sessions:
+                logger.warning(f"Session {session_id} not found")
+                return
+            
+            session_data = self.active_sessions[session_id]
         
-        session_data = self.active_sessions[session_id]
         timestamp = datetime.now().isoformat()
         
         # Create message entry
         message_entry = {
             'timestamp': timestamp,
             'role': 'user' if role in ['User', 'Career Response'] else 'assistant',
-            'content': message
+            'content': message[:1000]  # Limit message size to prevent memory issues
         }
         
         # Add to memory
         session_data['conversation'].append(message_entry)
+        
+        # Keep conversation list bounded to prevent memory issues
+        if len(session_data['conversation']) > 1000:
+            session_data['conversation'] = session_data['conversation'][-500:]
         
         # Queue message for batched writing
         blob_name = session_data['blob_name']
         if container_client:
             storage_manager.queue_message(blob_name, message_entry)
         else:
-            # Fallback to local storage
+            # Fallback to local storage with error handling
             try:
                 file_path = Path(session_data['file_path'])
                 if file_path.exists():
@@ -357,6 +479,10 @@ class OptimizedSessionManager:
                 
                 local_data['messages'].append(message_entry)
                 
+                # Keep messages bounded
+                if len(local_data['messages']) > 1000:
+                    local_data['messages'] = local_data['messages'][-500:]
+                
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(local_data, f, indent=2, ensure_ascii=False)
             except Exception as e:
@@ -364,10 +490,13 @@ class OptimizedSessionManager:
     
     def end_session(self, session_id):
         """End a session and finalize the log file"""
-        if session_id not in self.active_sessions:
-            return
+        with self.session_lock:
+            if session_id not in self.active_sessions:
+                return
+            
+            session_data = self.active_sessions[session_id].copy()
+            del self.active_sessions[session_id]
         
-        session_data = self.active_sessions[session_id]
         end_time = datetime.now()
         blob_name = session_data['blob_name']
         
@@ -382,17 +511,20 @@ class OptimizedSessionManager:
         
         # Update session data with end information
         def finalize_session():
-            existing_data = storage_manager.get_cached_or_read(blob_name)
-            
-            if existing_data:
-                # Update with end information
-                existing_data['end_time'] = end_time.isoformat()
-                existing_data['duration'] = duration
-                existing_data['total_messages'] = len(existing_data.get('messages', []))
+            try:
+                existing_data = storage_manager.get_cached_or_read(blob_name)
                 
-                # Save final data
-                storage_manager.save_to_blob_async(blob_name, existing_data)
-                storage_manager.invalidate_cache(blob_name)
+                if existing_data:
+                    # Update with end information
+                    existing_data['end_time'] = end_time.isoformat()
+                    existing_data['duration'] = duration
+                    existing_data['total_messages'] = len(existing_data.get('messages', []))
+                    
+                    # Save final data
+                    storage_manager.save_to_blob_async(blob_name, existing_data)
+                    storage_manager.invalidate_cache(blob_name)
+            except Exception as e:
+                logger.error(f"Error finalizing session: {e}")
         
         if container_client:
             thread_pool.submit(finalize_session)
@@ -413,7 +545,6 @@ class OptimizedSessionManager:
             except Exception as e:
                 logger.error(f"Error finalizing local session file: {e}")
         
-        del self.active_sessions[session_id]
         logger.info(f"Ended session {session_id}")
 
 # Initialize optimized session manager
@@ -424,89 +555,95 @@ class OptimizedCareerCounselingManager:
     def __init__(self):
         self.career_sessions = {}
         self.paused_sessions = {}
+        self.session_lock = threading.RLock()
     
     def create_career_session(self, user_id, user_name, user_email):
         """Create a new career counseling session"""
         career_session_id = f"career_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         
-        self.career_sessions[career_session_id] = {
-            'id': career_session_id,
-            'user_id': user_id,
-            'user_name': user_name,
-            'user_email': user_email,
-            'start_time': datetime.now(),
-            'completed_questions': [],
-            'responses': {},
-            'state': 'active',
-            'emotional_trajectory': []
-        }
+        with self.session_lock:
+            self.career_sessions[career_session_id] = {
+                'id': career_session_id,
+                'user_id': user_id,
+                'user_name': user_name,
+                'user_email': user_email,
+                'start_time': datetime.now(),
+                'completed_questions': [],
+                'responses': {},
+                'state': 'active',
+                'emotional_trajectory': []
+            }
         
         logger.info(f"Created career counseling session {career_session_id} for {user_name}")
         return career_session_id
     
     def save_response(self, career_session_id, question_id, response, emotion=None):
         """Save a student's response to a question"""
-        if career_session_id not in self.career_sessions:
-            return False
-        
-        session = self.career_sessions[career_session_id]
-        session['responses'][question_id] = {
-            'response': response,
-            'timestamp': datetime.now().isoformat(),
-            'emotion': emotion or 'neutral'
-        }
-        
-        if question_id not in session['completed_questions']:
-            session['completed_questions'].append(question_id)
-        
-        if emotion:
-            session['emotional_trajectory'].append({
-                'question_id': question_id,
-                'emotion': emotion,
-                'timestamp': datetime.now().isoformat()
-            })
+        with self.session_lock:
+            if career_session_id not in self.career_sessions:
+                return False
+            
+            session = self.career_sessions[career_session_id]
+            session['responses'][question_id] = {
+                'response': response[:500],  # Limit response size
+                'timestamp': datetime.now().isoformat(),
+                'emotion': emotion or 'neutral'
+            }
+            
+            if question_id not in session['completed_questions']:
+                session['completed_questions'].append(question_id)
+            
+            if emotion:
+                session['emotional_trajectory'].append({
+                    'question_id': question_id,
+                    'emotion': emotion,
+                    'timestamp': datetime.now().isoformat()
+                })
         
         return True
     
     def pause_session(self, career_session_id, current_question=None):
         """Pause a career counseling session"""
-        if career_session_id not in self.career_sessions:
-            return False
-        
-        session = self.career_sessions[career_session_id]
-        session['state'] = 'paused'
-        session['paused_at'] = datetime.now().isoformat()
-        session['current_question'] = current_question
-        
-        # Move to paused sessions
-        self.paused_sessions[career_session_id] = session
-        del self.career_sessions[career_session_id]
+        with self.session_lock:
+            if career_session_id not in self.career_sessions:
+                return False
+            
+            session = self.career_sessions[career_session_id]
+            session['state'] = 'paused'
+            session['paused_at'] = datetime.now().isoformat()
+            session['current_question'] = current_question
+            
+            # Move to paused sessions
+            self.paused_sessions[career_session_id] = session
+            del self.career_sessions[career_session_id]
         
         logger.info(f"Paused career session {career_session_id}")
         return True
     
     def resume_session(self, career_session_id):
         """Resume a paused career counseling session"""
-        if career_session_id not in self.paused_sessions:
-            return None
-        
-        session = self.paused_sessions[career_session_id]
-        session['state'] = 'active'
-        session['resumed_at'] = datetime.now().isoformat()
-        
-        # Move back to active sessions
-        self.career_sessions[career_session_id] = session
-        del self.paused_sessions[career_session_id]
+        with self.session_lock:
+            if career_session_id not in self.paused_sessions:
+                return None
+            
+            session = self.paused_sessions[career_session_id]
+            session['state'] = 'active'
+            session['resumed_at'] = datetime.now().isoformat()
+            
+            # Move back to active sessions
+            self.career_sessions[career_session_id] = session
+            del self.paused_sessions[career_session_id]
         
         logger.info(f"Resumed career session {career_session_id}")
         return session
     
     def save_summary(self, career_session_id, summary_data):
         """Save career counseling summary to Azure Blob Storage"""
-        if career_session_id not in self.career_sessions:
-            return None
-        
-        session = self.career_sessions[career_session_id]
+        with self.session_lock:
+            if career_session_id not in self.career_sessions:
+                return None
+            
+            session = self.career_sessions[career_session_id].copy()
         
         # Create filename
         safe_email = session['user_email'].replace('@', '_at_').replace('.', '_')
@@ -541,11 +678,9 @@ class OptimizedCareerCounselingManager:
         # Save asynchronously
         if container_client:
             future = storage_manager.save_to_blob_async(blob_name, complete_summary)
-            # Wait for completion since this is important
-            result = future.result(timeout=10)
-            if result:
-                logger.info(f"Saved career summary to Azure: {blob_name}")
-                return result
+            # Don't wait for completion to avoid blocking
+            logger.info(f"Saving career summary to Azure: {blob_name}")
+            return f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER_NAME}/{blob_name}"
         
         # Fallback to local storage
         try:
@@ -561,18 +696,20 @@ class OptimizedCareerCounselingManager:
 # Initialize optimized career counseling manager
 career_manager = OptimizedCareerCounselingManager()
 
-# Routes
+# Routes with caching headers
 @app.route('/')
 def index():
     """Main page - check if user is registered"""
     if 'user_id' not in session:
         return redirect(url_for('register'))
-    return render_template('chat.html')
+    response = render_template('chat.html')
+    return response
 
 @app.route('/register')
 def register():
     """User registration page"""
-    return render_template('register.html')
+    response = render_template('register.html')
+    return response
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
@@ -591,6 +728,7 @@ def api_register():
     session['user_id'] = session_id
     session['user_email'] = user_email
     session['user_name'] = user_name
+    session.permanent = True  # Make session permanent with expiry
     
     return jsonify({
         'success': True,
@@ -599,6 +737,7 @@ def api_register():
     })
 
 @app.route('/api/config')
+@lru_cache(maxsize=1)  # Cache config as it doesn't change
 def get_config():
     """Get configuration for WebRTC"""
     return jsonify({
@@ -619,17 +758,22 @@ def logout():
         session.clear()
     return jsonify({'success': True, 'redirect': url_for('register')})
 
-# WebSocket events
+# Health check endpoint for Azure
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Azure App Service"""
+    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()}), 200
+
+# WebSocket events - optimized handlers
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
-    logger.info(f"Client connected: {request.sid}")
     emit('connected', {'status': 'Connected to server'})
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnection"""
-    logger.info(f"Client disconnected: {request.sid}")
+    pass  # Removed logging to reduce overhead
 
 @socketio.on('conversation_update')
 def handle_conversation_update(data):
@@ -638,16 +782,21 @@ def handle_conversation_update(data):
     if session_id:
         role = data.get('role', 'Unknown')
         message = data.get('message', '')
-        session_manager.log_conversation(session_id, role, message)
         
-        # Broadcast state change to update animations
-        emit('state_change', {'state': data.get('state', 'idle')}, broadcast=True)
+        # Log asynchronously
+        thread_pool.submit(session_manager.log_conversation, session_id, role, message)
+        
+        # Broadcast state change only if needed
+        state = data.get('state')
+        if state and state != 'idle':
+            emit('state_change', {'state': state}, room=request.sid)
 
 @socketio.on('state_change')
 def handle_state_change(data):
     """Handle state changes for animation updates"""
     state = data.get('state', 'idle')
-    emit('animation_state', {'state': state}, broadcast=True)
+    if state != 'idle':  # Only broadcast non-idle states
+        emit('animation_state', {'state': state}, room=request.sid)
 
 # Career Counseling WebSocket Events
 @socketio.on('career_start')
@@ -666,15 +815,13 @@ def handle_career_start():
     session['career_session_id'] = career_session_id
     
     # Log the start
-    session_manager.log_conversation(user_id, 'System', 'Started career counseling session')
+    thread_pool.submit(session_manager.log_conversation, user_id, 'System', 'Started career counseling session')
     
     emit('career_started', {
         'success': True,
         'career_session_id': career_session_id,
         'message': 'Career counseling session initialized'
     })
-    
-    logger.info(f"Started career counseling for {user_name} ({career_session_id})")
 
 @socketio.on('career_response')
 def handle_career_response(data):
@@ -694,8 +841,9 @@ def handle_career_response(data):
     success = career_manager.save_response(career_session_id, question_id, response, emotion)
     
     if success:
-        # Log to main session
-        session_manager.log_conversation(
+        # Log asynchronously
+        thread_pool.submit(
+            session_manager.log_conversation,
             user_id, 
             'Career Response', 
             f"Q:{question_id} - A:{response[:100]}..."
@@ -704,7 +852,7 @@ def handle_career_response(data):
         emit('career_response_saved', {
             'success': True,
             'question_id': question_id,
-            'questions_completed': len(career_manager.career_sessions[career_session_id]['completed_questions'])
+            'questions_completed': len(career_manager.career_sessions.get(career_session_id, {}).get('completed_questions', []))
         })
     else:
         emit('career_error', {'error': 'Failed to save response'})
@@ -727,7 +875,6 @@ def handle_career_pause(data):
             'career_session_id': career_session_id,
             'message': 'Session paused. You can resume anytime.'
         })
-        logger.info(f"Paused career session {career_session_id}")
     else:
         emit('career_error', {'error': 'Failed to pause session'})
 
@@ -739,10 +886,11 @@ def handle_career_resume(data):
     if not career_session_id:
         # Try to find by user
         user_email = session.get('user_email')
-        for sid, sess in career_manager.paused_sessions.items():
-            if sess['user_email'] == user_email:
-                career_session_id = sid
-                break
+        with career_manager.session_lock:
+            for sid, sess in career_manager.paused_sessions.items():
+                if sess['user_email'] == user_email:
+                    career_session_id = sid
+                    break
     
     if not career_session_id:
         emit('career_error', {'error': 'No paused session found'})
@@ -760,7 +908,6 @@ def handle_career_resume(data):
             'completed_questions': resumed_session['completed_questions'],
             'message': 'Session resumed successfully'
         })
-        logger.info(f"Resumed career session {career_session_id}")
     else:
         emit('career_error', {'error': 'Failed to resume session'})
 
@@ -770,17 +917,19 @@ def handle_career_summary(data):
     career_session_id = session.get('career_session_id') or data.get('session_id')
     user_id = session.get('user_id')
     
-    if not career_session_id or career_session_id not in career_manager.career_sessions:
-        emit('career_error', {'error': 'No active career counseling session'})
-        return
+    with career_manager.session_lock:
+        if not career_session_id or career_session_id not in career_manager.career_sessions:
+            emit('career_error', {'error': 'No active career counseling session'})
+            return
     
     # Save the summary
     summary_location = career_manager.save_summary(career_session_id, data)
     
     if summary_location:
-        # Log to main session
+        # Log asynchronously
         total_questions = data.get('total_questions_answered', 0)
-        session_manager.log_conversation(
+        thread_pool.submit(
+            session_manager.log_conversation,
             user_id,
             'Career Summary',
             f"Completed career counseling with {total_questions} questions answered"
@@ -793,11 +942,11 @@ def handle_career_summary(data):
         })
         
         # Clean up the career session
-        del career_manager.career_sessions[career_session_id]
+        with career_manager.session_lock:
+            if career_session_id in career_manager.career_sessions:
+                del career_manager.career_sessions[career_session_id]
         if 'career_session_id' in session:
             del session['career_session_id']
-        
-        logger.info(f"Saved career summary for session {career_session_id}")
     else:
         emit('career_error', {'error': 'Failed to save summary'})
 
@@ -806,15 +955,16 @@ def handle_career_progress():
     """Get current career counseling progress"""
     career_session_id = session.get('career_session_id')
     
-    if not career_session_id or career_session_id not in career_manager.career_sessions:
-        emit('career_progress', {
-            'active': False,
-            'questions_completed': 0,
-            'responses': {}
-        })
-        return
-    
-    session_data = career_manager.career_sessions[career_session_id]
+    with career_manager.session_lock:
+        if not career_session_id or career_session_id not in career_manager.career_sessions:
+            emit('career_progress', {
+                'active': False,
+                'questions_completed': 0,
+                'responses': {}
+            })
+            return
+        
+        session_data = career_manager.career_sessions[career_session_id]
     
     emit('career_progress', {
         'active': True,

@@ -18,6 +18,8 @@
     --success-color: #10b981;
     --danger-color: #ef4444;
     --warning-color: #f59e0b;
+    --mobile-header-height: 60px;
+    --mobile-controls-height: 120px;
 }
 
 body {
@@ -26,6 +28,13 @@ body {
     color: var(--text-primary);
     min-height: 100vh;
     overflow: hidden;
+    position: relative;
+}
+
+/* Use CSS custom property for viewport height to handle mobile browsers */
+body {
+    height: 100vh;
+    height: calc(var(--vh, 1vh) * 100);
 }
 
 /* Registration Page Styles */
@@ -34,6 +43,7 @@ body {
     align-items: center;
     justify-content: center;
     min-height: 100vh;
+    min-height: calc(var(--vh, 1vh) * 100);
     padding: 20px;
     overflow-y: auto;
 }
@@ -232,12 +242,15 @@ body {
 /* Chat Page Styles */
 .chat-page {
     height: 100vh;
+    height: calc(var(--vh, 1vh) * 100);
     overflow: hidden;
 }
 
 .app-container {
     display: flex;
     height: 100vh;
+    height: calc(var(--vh, 1vh) * 100);
+    position: relative;
 }
 
 /* Left Panel with Animations */
@@ -703,33 +716,203 @@ body {
     }
 }
 
-/* Mobile Menu Toggle (Hidden by default) */
-.mobile-menu-toggle {
+/* Mobile Animation Toggle */
+.mobile-animation-toggle {
     display: none;
-    position: fixed;
-    top: 16px;
-    left: 16px;
-    z-index: 1001;
-    background: rgba(30, 41, 59, 0.9);
-    border: 1px solid var(--dark-border);
-    border-radius: 12px;
-    padding: 10px;
-    cursor: pointer;
 }
 
-/* Responsive Design - Tablet */
-@media (max-width: 1024px) {
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    /* Chat Page Mobile Layout */
+    .app-container {
+        flex-direction: column;
+        height: 100vh;
+        height: calc(var(--vh, 1vh) * 100);
+    }
+    
+    /* Hide desktop left panel on mobile */
     .left-panel {
-        width: 350px;
+        display: none;
+    }
+    
+    /* Mobile Animation Toggle Button */
+    .mobile-animation-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        background: rgba(30, 41, 59, 0.9);
+        border: 1px solid var(--dark-border);
+        border-radius: 8px;
+        color: var(--text-primary);
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .mobile-animation-toggle:active {
+        transform: scale(0.95);
+    }
+    
+    /* Simplified Mobile Animation Panel */
+    .mobile-animation-panel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(180deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--dark-border);
+        padding: 20px;
+        transform: translateY(-100%);
+        transition: transform 0.3s ease;
+        z-index: 1000;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .mobile-animation-panel.show {
+        transform: translateY(0);
+    }
+    
+    .mobile-animation-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+    }
+    
+    .mobile-animation {
+        width: 100px;
+        height: 100px;
+        position: relative;
+    }
+    
+    .mobile-status {
+        font-size: 14px;
+        color: var(--text-secondary);
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    /* Mobile Chat Container */
+    .chat-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+    }
+    
+    /* Mobile Chat Header */
+    .chat-header {
+        padding: 12px 16px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: var(--mobile-header-height);
     }
     
     .chat-header h2 {
-        font-size: 20px;
+        font-size: 18px;
+        flex: 1;
     }
-}
-
-/* Responsive Design - Mobile Large */
-@media (max-width: 768px) {
+    
+    .connection-status {
+        padding: 4px 10px;
+        font-size: 12px;
+    }
+    
+    /* Mobile Chat Messages */
+    .chat-messages {
+        flex: 1;
+        padding: 12px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+    
+    .message-content {
+        max-width: 85%;
+        padding: 12px 16px;
+        font-size: 14px;
+        word-wrap: break-word;
+    }
+    
+    /* Mobile Chat Controls */
+    .chat-controls {
+        padding: 12px;
+        gap: 8px;
+        flex-shrink: 0;
+        background: rgba(30, 41, 59, 0.95);
+        backdrop-filter: blur(10px);
+        position: sticky;
+        bottom: 0;
+        z-index: 100;
+        min-height: var(--mobile-controls-height);
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .btn-control {
+        width: 100%;
+        padding: 14px 16px;
+        font-size: 14px;
+        justify-content: center;
+        min-height: 48px;
+        border-radius: 10px;
+    }
+    
+    .btn-control:active {
+        transform: scale(0.98);
+    }
+    
+    .btn-control:hover:not(:disabled) {
+        transform: none;
+        box-shadow: none;
+    }
+    
+    .btn-control svg {
+        width: 20px;
+        height: 20px;
+    }
+    
+    /* Mobile Logout Button */
+    .btn-logout {
+        position: fixed;
+        bottom: calc(var(--mobile-controls-height) + 16px);
+        right: 16px;
+        width: auto;
+        padding: 8px 16px;
+        font-size: 12px;
+        border-radius: 20px;
+        background: rgba(239, 68, 68, 0.9);
+        color: white;
+        border: none;
+        z-index: 101;
+    }
+    
+    /* Mobile Error Container */
+    .error-container {
+        bottom: calc(var(--mobile-controls-height) + 20px);
+        left: 12px;
+        right: 12px;
+        transform: none;
+        width: auto;
+    }
+    
+    .error-message {
+        font-size: 13px;
+        padding: 12px 16px;
+    }
+    
+    /* Hide scrollbar on mobile for cleaner look */
+    .chat-messages::-webkit-scrollbar {
+        width: 4px;
+    }
+    
     /* Registration Page Mobile */
     .register-card {
         padding: 32px 24px;
@@ -740,136 +923,55 @@ body {
         font-size: 28px;
     }
     
-    .register-form {
-        gap: 20px;
+    .logo-animation {
+        width: 80px;
+        height: 80px;
     }
-    
-    /* Chat Page Mobile */
-    .app-container {
-        flex-direction: column;
-        position: relative;
-    }
-    
-    .left-panel {
-        width: 100%;
-        height: 30vh;
-        min-height: 200px;
-        border-right: none;
-        border-bottom: 1px solid var(--dark-border);
-        position: absolute;
-        top: 0;
-        left: 0;
-        transform: translateY(0);
-        transition: transform 0.3s ease;
-        z-index: 100;
-    }
-    
-    .left-panel.hidden {
-        transform: translateY(-100%);
-    }
-    
-    .mobile-menu-toggle {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    
-    .chat-container {
-        height: 100vh;
-        padding-top: 30vh;
-    }
-    
-    .left-panel.hidden + .chat-container {
-        padding-top: 0;
-    }
-    
-    .animation-container {
-        height: calc(30vh - 80px);
-        min-height: 120px;
-    }
-    
-    .animation-state {
-        width: 150px;
-        height: 150px;
-    }
-    
-    .orbit-container,
-    .ai-pulse,
-    .processing-container,
-    .sound-waves {
-        transform: scale(0.7);
-    }
-    
-    .status-label {
-        bottom: 20px;
-        font-size: 12px;
-    }
-    
-    .panel-footer {
-        padding: 12px;
-    }
-    
-    .btn-logout {
-        font-size: 13px;
-        padding: 10px 16px;
-    }
-    
+}
+
+/* Small Mobile Devices */
+@media (max-width: 480px) {
     .chat-header {
-        padding: 16px;
-        flex-direction: column;
-        gap: 12px;
-        align-items: flex-start;
+        padding: 10px 12px;
     }
     
     .chat-header h2 {
-        font-size: 18px;
+        font-size: 16px;
     }
     
     .connection-status {
-        padding: 6px 12px;
-        font-size: 12px;
+        display: none;
     }
     
     .chat-messages {
-        padding: 16px;
+        padding: 10px;
     }
     
     .message-content {
         max-width: 90%;
-        padding: 12px 16px;
-        font-size: 14px;
+        font-size: 13px;
     }
     
     .chat-controls {
-        padding: 16px;
-        flex-direction: column;
+        padding: 10px;
     }
     
     .btn-control {
-        width: 100%;
-        justify-content: center;
-        font-size: 14px;
-        padding: 12px 20px;
+        font-size: 13px;
+        padding: 12px;
+        min-height: 44px;
     }
     
     .btn-control span {
-        display: block;
+        white-space: nowrap;
     }
     
-    .error-container {
-        bottom: 80px;
-        width: 90%;
-        max-width: none;
+    .btn-logout {
+        font-size: 11px;
+        padding: 6px 12px;
     }
-}
-
-/* Responsive Design - Mobile Medium */
-@media (max-width: 480px) {
+    
     /* Registration Page */
-    .register-page {
-        padding: 16px;
-    }
-    
     .register-card {
         padding: 24px 20px;
     }
@@ -877,194 +979,45 @@ body {
     .brand h1 {
         font-size: 24px;
     }
-    
-    .brand p {
-        font-size: 12px;
-    }
-    
-    .logo-animation {
-        width: 80px;
-        height: 80px;
-        margin-bottom: 16px;
-    }
-    
-    .form-group label {
-        font-size: 13px;
-    }
-    
-    .form-group input {
-        font-size: 15px;
-        padding: 10px 14px;
-    }
-    
-    .btn-primary {
-        font-size: 15px;
-        padding: 12px 20px;
-    }
-    
-    /* Chat Page */
-    .left-panel {
-        height: 25vh;
-        min-height: 180px;
-    }
-    
-    .chat-container {
-        padding-top: 25vh;
-    }
-    
-    .animation-state {
-        width: 120px;
-        height: 120px;
-    }
-    
-    .orbit-container,
-    .ai-pulse,
-    .processing-container,
-    .sound-waves {
-        transform: scale(0.6);
-    }
-    
-    .chat-messages {
-        padding: 12px;
-        gap: 12px;
-    }
-    
-    .message-content {
-        max-width: 100%;
-    }
-    
-    .chat-controls {
-        gap: 12px;
-    }
 }
 
-/* Responsive Design - Mobile Small */
+/* Extra Small Devices */
 @media (max-width: 375px) {
-    .register-card {
-        padding: 20px 16px;
-    }
-    
-    .brand h1 {
-        font-size: 22px;
-    }
-    
-    .left-panel {
-        height: 22vh;
-        min-height: 160px;
-    }
-    
-    .chat-container {
-        padding-top: 22vh;
-    }
-    
-    .animation-state {
-        width: 100px;
-        height: 100px;
-    }
-    
-    .orbit-container,
-    .ai-pulse,
-    .processing-container,
-    .sound-waves {
-        transform: scale(0.5);
+    :root {
+        --mobile-header-height: 50px;
+        --mobile-controls-height: 110px;
     }
     
     .chat-header h2 {
-        font-size: 16px;
+        font-size: 15px;
+    }
+    
+    .message-content {
+        padding: 10px 14px;
     }
     
     .btn-control {
-        font-size: 13px;
-        padding: 10px 16px;
-        min-height: 44px;
-    }
-    
-    .btn-control svg {
-        width: 20px;
-        height: 20px;
+        font-size: 12px;
+        gap: 8px;
     }
 }
 
-/* Touch-friendly adjustments */
-@media (hover: none) and (pointer: coarse) {
-    .btn-primary,
-    .btn-control,
-    .btn-logout {
-        min-height: 44px;
-        -webkit-tap-highlight-color: transparent;
-    }
-    
-    .form-group input {
-        min-height: 44px;
-        font-size: 16px; /* Prevent zoom on iOS */
-    }
-    
-    /* Remove hover effects on touch devices */
-    .btn-primary:hover,
-    .btn-control:hover:not(:disabled),
-    .btn-logout:hover {
-        transform: none;
-        box-shadow: none;
-    }
-}
-
-/* Landscape Mode Adjustments */
+/* Landscape Mode for Mobile */
 @media (max-height: 600px) and (orientation: landscape) {
-    .register-page {
-        padding: 10px;
-    }
-    
-    .register-card {
-        padding: 20px;
-    }
-    
-    .brand {
-        margin-bottom: 20px;
-    }
-    
-    .logo-animation {
-        width: 60px;
-        height: 60px;
-        margin-bottom: 12px;
-    }
-    
-    .left-panel {
-        height: 100vh;
-        width: 250px;
-        border-bottom: none;
-        border-right: 1px solid var(--dark-border);
-    }
-    
-    .app-container {
-        flex-direction: row;
-    }
-    
-    .chat-container {
-        padding-top: 0;
-    }
-    
-    .animation-state {
-        width: 120px;
-        height: 120px;
-    }
-    
-    .orbit-container,
-    .ai-pulse,
-    .processing-container,
-    .sound-waves {
-        transform: scale(0.6);
-    }
-    
-    .chat-header {
-        padding: 12px 16px;
-    }
-    
-    .chat-messages {
-        padding: 12px;
+    :root {
+        --mobile-header-height: 50px;
+        --mobile-controls-height: 80px;
     }
     
     .chat-controls {
-        padding: 12px;
-        gap: 10px;
+        flex-direction: row;
+        padding: 8px;
+    }
+    
+    .btn-control {
+        width: auto;
+        flex: 1;
+        padding: 10px 16px;
+        min-height: 40px;
     }
 }
