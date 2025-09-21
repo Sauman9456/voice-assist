@@ -1,0 +1,13 @@
+Session Started: 2025-09-21T07:47:35.116074
+User: Saumaan Momin (sauman.1099@gmail.com)
+Session ID: 4aa817e0-30d1-4172-af97-6f849698b5b6
+--------------------------------------------------------------------------------
+
+[07:47:46] Assistant: Hello Saumaan! I'm your career counseling assistant, and I'm here to help you navigate your career path. We'll go through some questions to understand your interests and concerns better. You can speak to me in English or Hinglish, whichever you prefer. Let's begin our conversation.
+
+To start, could you tell me a little about your current academic situation, like your year and major?
+[07:48:20] Assistant: Great, I’ve noted that down. Now, Saumaan, could you share what specific challenges or confusion you're facing when it comes to planning your career right now?
+[07:48:32] Assistant: Right now, I’m set to speak in clear English, as we began the conversation that way. If you’d like me to switch to Hinglish, just let me know and I can adjust.
+
+Now, let’s continue. What specific career challenges or confusions are you facing right now, Saumaan?
+[07:48:40] Assistant: Theek hai, Saumaan. Main ab Hinglish mein baat karunga. Aapne ab tak bataya ki aap third year mein hain, computer science major ke saath aur machine learning pe focus kar rahe hain. Ab main jaanana chahta hoon ki aapko career planning ko lekar jo sabse badi confusion ya challenge lag raha hai, wo kya hai?

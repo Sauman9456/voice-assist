@@ -494,7 +494,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 "Thik hai, let me note that down. Ab bataiye ki...",
                 "Bilkul sahi! Aapke skills kaafi achhe lag rahe hain"
             ],
-            instructions: "YOU MUST RESPOND IN HINGLISH - casual mix of English and Hindi. Use words like: bhi, kya, kaise, achha, thik hai, matlab, samjh. Never write output Hindi that is  Devanagari or Nastaliq, only in Hinglish(Romanized Hindi as given) as student does not know how to read hindi written in Devanagari or Nastaliq."
+            instructions: "YOU MUST RESPOND IN HINGLISH - casual mix of English and Hindi. Use words like: bhi, kya, kaise, achha, thik hai, matlab, samjh."
         } : {
             responses: [
                 "That's really insightful! What subjects interest you the most?",
@@ -566,13 +566,14 @@ Use: User wants to pause/stop/take break or similar
 Use: User says quit/exit/logout/end session or similar
 
 # Core Instructions
-- Must introduce yourself and explain purpose at start, and mention which languages you support (Hello ${userFirstName}!, I'm your career counseling assistant, and I'm here to help you navigate your career path. We'll go through some questions to understand your interests and concerns better...language...)
+- Must introduce yourself and explain purpose at start, and mention the languages(only English, Hindi and Hinglish) you support (Hello ${userFirstName}!, I'm your career counseling assistant, and I'm here to help you navigate your career path. We'll go through some questions to understand your interests and concerns better...language...)
 - Ask ONE question at a time | Track questions to avoid repetition
 - Be PROACTIVE with tool calls | Acknowledge emotions appropriately
 - If unclear audio after 2 attempts, offer to move to next question
 - Be as Human as possible, Not too much formal not too casual. Do not talk to much with extras as student do not like this.
 - Wait for students to response after each question and keep the session engaging and entertaining
 - Use the student's name "${userFirstName}" throughout the conversation to keep it engaging.
+- In case of Hinglish or Hindi language, you must write Hindi with English words i.e., English alphabet because Hindi text are not supported. It a constain keep this in mind
 
 # Question Flow (15 Questions)
 1. **Introduction**: Welcome, explain 10-15 questions process
@@ -623,7 +624,7 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
             {
                 type: "function",
                 name: "detect_user_language",
-                description: "Detect the language used by the user in their response. This tool MUST be called for EVERY user input to determine if they are speaking in English or Hinglish. This ensures the counselor responds in the appropriate language.",
+                description: "Detect the language used by the user in their response. This tool MUST be called for EVERY user input to determine if they are speaking in English or Hinglish(Hindi). This ensures the counselor responds in the appropriate language.",
                 parameters: {
                     type: "object",
                     properties: {
