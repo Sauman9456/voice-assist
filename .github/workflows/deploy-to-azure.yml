@@ -3,8 +3,8 @@ name: Deploy to Azure Web App
 on:
   push:
     branches:
-      - Deploy
       - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -14,12 +14,12 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     
-    - name: Set up Python version
+    - name: Set up Python 3.10
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
     
-    - name: Create and activate virtual environment
+    - name: Create and start virtual environment
       run: |
         python -m venv venv
         source venv/bin/activate
@@ -29,13 +29,19 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
-    - name: Building web app
-      run: echo "Build complete"
+    - name: Upload artifact for deployment
+      uses: actions/upload-artifact@v3
+      with:
+        name: python-app
+        path: |
+          . 
+          !venv/
+          !.git/
+          !.github/
     
     - name: 'Deploy to Azure Web App'
       uses: azure/webapps-deploy@v2
       with:
         app-name: 'new-voice-assistant'
-        slot-name: 'production'
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        package: .
+        slot-name: 'Production'
+        publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
