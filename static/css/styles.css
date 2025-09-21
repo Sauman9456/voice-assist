@@ -35,6 +35,7 @@ body {
     justify-content: center;
     min-height: 100vh;
     padding: 20px;
+    overflow-y: auto;
 }
 
 .container {
@@ -168,6 +169,7 @@ body {
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
+    min-height: 48px;
 }
 
 .btn-primary:hover {
@@ -494,6 +496,7 @@ body {
     align-items: center;
     justify-content: center;
     gap: 8px;
+    min-height: 44px;
 }
 
 .btn-logout:hover {
@@ -653,6 +656,7 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
+    min-height: 48px;
 }
 
 .btn-control:hover:not(:disabled) {
@@ -699,31 +703,368 @@ body {
     }
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
+/* Mobile Menu Toggle (Hidden by default) */
+.mobile-menu-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 1001;
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid var(--dark-border);
+    border-radius: 12px;
+    padding: 10px;
+    cursor: pointer;
+}
+
+/* Responsive Design - Tablet */
+@media (max-width: 1024px) {
     .left-panel {
-        width: 100%;
-        height: 40vh;
-        border-right: none;
-        border-bottom: 1px solid var(--dark-border);
+        width: 350px;
     }
     
+    .chat-header h2 {
+        font-size: 20px;
+    }
+}
+
+/* Responsive Design - Mobile Large */
+@media (max-width: 768px) {
+    /* Registration Page Mobile */
+    .register-card {
+        padding: 32px 24px;
+        border-radius: 20px;
+    }
+    
+    .brand h1 {
+        font-size: 28px;
+    }
+    
+    .register-form {
+        gap: 20px;
+    }
+    
+    /* Chat Page Mobile */
     .app-container {
         flex-direction: column;
+        position: relative;
+    }
+    
+    .left-panel {
+        width: 100%;
+        height: 30vh;
+        min-height: 200px;
+        border-right: none;
+        border-bottom: 1px solid var(--dark-border);
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform: translateY(0);
+        transition: transform 0.3s ease;
+        z-index: 100;
+    }
+    
+    .left-panel.hidden {
+        transform: translateY(-100%);
+    }
+    
+    .mobile-menu-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .chat-container {
+        height: 100vh;
+        padding-top: 30vh;
+    }
+    
+    .left-panel.hidden + .chat-container {
+        padding-top: 0;
     }
     
     .animation-container {
-        height: calc(40vh - 80px);
+        height: calc(30vh - 80px);
+        min-height: 120px;
     }
     
     .animation-state {
-        width: 180px;
-        height: 180px;
+        width: 150px;
+        height: 150px;
     }
     
     .orbit-container,
     .ai-pulse,
-    .processing-container {
-        transform: scale(0.8);
+    .processing-container,
+    .sound-waves {
+        transform: scale(0.7);
+    }
+    
+    .status-label {
+        bottom: 20px;
+        font-size: 12px;
+    }
+    
+    .panel-footer {
+        padding: 12px;
+    }
+    
+    .btn-logout {
+        font-size: 13px;
+        padding: 10px 16px;
+    }
+    
+    .chat-header {
+        padding: 16px;
+        flex-direction: column;
+        gap: 12px;
+        align-items: flex-start;
+    }
+    
+    .chat-header h2 {
+        font-size: 18px;
+    }
+    
+    .connection-status {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .chat-messages {
+        padding: 16px;
+    }
+    
+    .message-content {
+        max-width: 90%;
+        padding: 12px 16px;
+        font-size: 14px;
+    }
+    
+    .chat-controls {
+        padding: 16px;
+        flex-direction: column;
+    }
+    
+    .btn-control {
+        width: 100%;
+        justify-content: center;
+        font-size: 14px;
+        padding: 12px 20px;
+    }
+    
+    .btn-control span {
+        display: block;
+    }
+    
+    .error-container {
+        bottom: 80px;
+        width: 90%;
+        max-width: none;
+    }
+}
+
+/* Responsive Design - Mobile Medium */
+@media (max-width: 480px) {
+    /* Registration Page */
+    .register-page {
+        padding: 16px;
+    }
+    
+    .register-card {
+        padding: 24px 20px;
+    }
+    
+    .brand h1 {
+        font-size: 24px;
+    }
+    
+    .brand p {
+        font-size: 12px;
+    }
+    
+    .logo-animation {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 16px;
+    }
+    
+    .form-group label {
+        font-size: 13px;
+    }
+    
+    .form-group input {
+        font-size: 15px;
+        padding: 10px 14px;
+    }
+    
+    .btn-primary {
+        font-size: 15px;
+        padding: 12px 20px;
+    }
+    
+    /* Chat Page */
+    .left-panel {
+        height: 25vh;
+        min-height: 180px;
+    }
+    
+    .chat-container {
+        padding-top: 25vh;
+    }
+    
+    .animation-state {
+        width: 120px;
+        height: 120px;
+    }
+    
+    .orbit-container,
+    .ai-pulse,
+    .processing-container,
+    .sound-waves {
+        transform: scale(0.6);
+    }
+    
+    .chat-messages {
+        padding: 12px;
+        gap: 12px;
+    }
+    
+    .message-content {
+        max-width: 100%;
+    }
+    
+    .chat-controls {
+        gap: 12px;
+    }
+}
+
+/* Responsive Design - Mobile Small */
+@media (max-width: 375px) {
+    .register-card {
+        padding: 20px 16px;
+    }
+    
+    .brand h1 {
+        font-size: 22px;
+    }
+    
+    .left-panel {
+        height: 22vh;
+        min-height: 160px;
+    }
+    
+    .chat-container {
+        padding-top: 22vh;
+    }
+    
+    .animation-state {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .orbit-container,
+    .ai-pulse,
+    .processing-container,
+    .sound-waves {
+        transform: scale(0.5);
+    }
+    
+    .chat-header h2 {
+        font-size: 16px;
+    }
+    
+    .btn-control {
+        font-size: 13px;
+        padding: 10px 16px;
+        min-height: 44px;
+    }
+    
+    .btn-control svg {
+        width: 20px;
+        height: 20px;
+    }
+}
+
+/* Touch-friendly adjustments */
+@media (hover: none) and (pointer: coarse) {
+    .btn-primary,
+    .btn-control,
+    .btn-logout {
+        min-height: 44px;
+        -webkit-tap-highlight-color: transparent;
+    }
+    
+    .form-group input {
+        min-height: 44px;
+        font-size: 16px; /* Prevent zoom on iOS */
+    }
+    
+    /* Remove hover effects on touch devices */
+    .btn-primary:hover,
+    .btn-control:hover:not(:disabled),
+    .btn-logout:hover {
+        transform: none;
+        box-shadow: none;
+    }
+}
+
+/* Landscape Mode Adjustments */
+@media (max-height: 600px) and (orientation: landscape) {
+    .register-page {
+        padding: 10px;
+    }
+    
+    .register-card {
+        padding: 20px;
+    }
+    
+    .brand {
+        margin-bottom: 20px;
+    }
+    
+    .logo-animation {
+        width: 60px;
+        height: 60px;
+        margin-bottom: 12px;
+    }
+    
+    .left-panel {
+        height: 100vh;
+        width: 250px;
+        border-bottom: none;
+        border-right: 1px solid var(--dark-border);
+    }
+    
+    .app-container {
+        flex-direction: row;
+    }
+    
+    .chat-container {
+        padding-top: 0;
+    }
+    
+    .animation-state {
+        width: 120px;
+        height: 120px;
+    }
+    
+    .orbit-container,
+    .ai-pulse,
+    .processing-container,
+    .sound-waves {
+        transform: scale(0.6);
+    }
+    
+    .chat-header {
+        padding: 12px 16px;
+    }
+    
+    .chat-messages {
+        padding: 12px;
+    }
+    
+    .chat-controls {
+        padding: 12px;
+        gap: 10px;
     }
 }
