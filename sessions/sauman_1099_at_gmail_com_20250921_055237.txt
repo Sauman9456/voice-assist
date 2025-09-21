@@ -1,0 +1,16 @@
+Session Started: 2025-09-21T05:52:37.583533
+User: Saumaan Aqeel Ahmad Momin (sauman.1099@gmail.com)
+Session ID: e24304b7-b9e1-475b-b0ba-95102fd41f6a
+--------------------------------------------------------------------------------
+
+[05:52:52] Assistant: Hello Saumaan Aqeel Ahmad Momin! I'm your career counseling assistant, and I'm here to help you navigate your career path. We'll go through some questions to better understand your interests and concerns. And don’t worry, there are no wrong answers. So, let’s start with where you are academically. What year are you in, and what's your major or field of study?
+[05:53:40] Assistant: Hello Saumaan Aqeel Ahmad Momin! I'm your career counseling assistant, and I'm here to help you navigate your career path. We'll go through some questions to understand your interests, skills, and concerns, and there are no wrong answers. To start off, can you tell me what year you're in and what you're studying?
+[05:54:02] Assistant: Got it, you're in your second year of your Bachelor of Business Administration. Let me capture that.
+[05:54:06] Assistant: Thanks for sharing that. Now, let’s dive into what aspects of choosing a career path feel most challenging for you right now. What’s making you feel lost or confused about your career direction?
+[05:54:28] Assistant: It's completely normal to feel unsure at this stage, Saumaan. We'll definitely explore your options together. Let’s start by pinpointing exactly what feels unclear—are you uncertain about which career paths match your skills, or is it more about how to start planning?
+[05:54:44] Assistant: Hello again, Saumaan Aqeel Ahmad Momin. I’m your career counseling assistant, here to support you in navigating your career path. We’ll go through a few more questions to understand your interests, concerns, and goals. There are no wrong answers, so feel free to share whatever comes to mind.
+[05:55:10] Assistant: Thanks, Saumaan Aqeel Ahmad Momin. Let’s dive into something important—what aspects of choosing your career path feel most confusing or challenging for you right now?
+
+--------------------------------------------------------------------------------
+Session Ended: 2025-09-21T05:55:33.347170
+Duration: 0:02:55.764634

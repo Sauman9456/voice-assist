@@ -95,15 +95,24 @@ document.addEventListener('DOMContentLoaded', function() {
     function initializeCareerCounselor() {
         CareerState.sessionId = generateSessionId();
         CareerState.questionQueue = [...CareerState.requiredQuestions];
+        
+        // Load user name from localStorage (set during registration)
+        const storedName = localStorage.getItem('user_name');
+        if (storedName) {
+            CareerState.studentName = storedName;
+            console.log('Loaded user name from storage:', storedName);
+        }
+        
         console.log('Career Counselor initialized with session:', CareerState.sessionId);
     }
 
     // Clear old sessions on fresh login
     function clearOldSessionOnLogin() {
-        // Check if this is a fresh page load (not a refresh)
-        const isNewLogin = !sessionStorage.getItem('existing_session');
+        // Check if user session is active (set during registration)
+        const userSessionActive = localStorage.getItem('user_session_active');
         
-        if (isNewLogin) {
+        // If no active session marker, this is a fresh login
+        if (!userSessionActive) {
             // Clear all career session data from localStorage
             const keys = Object.keys(localStorage);
             keys.forEach(key => {
@@ -114,8 +123,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             
-            // Mark that we've initialized for this browser session
-            sessionStorage.setItem('existing_session', 'true');
             console.log('Cleared old sessions for fresh login');
         }
     }
@@ -469,6 +476,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Get Career Counselor System Prompt (from realtime_prompts.py)
     function getCareerCounselorPrompt() {
+        // Get the stored user name from localStorage or CareerState
+        const userName = CareerState.studentName || localStorage.getItem('user_name') || null;
+        
         return `
 # Role & Objective
 You are a warm, empathetic career counselor specifically designed to help university students who feel lost about their career path. Your goal is to gather comprehensive information about their concerns, interests, skills, and fears through a structured but conversational interview.
@@ -573,13 +583,12 @@ Goal: Welcome student and explain the process
 How to respond:
 - Introduce yourself as their career counseling assistant
 - Explain you'll ask 10-15 questions to understand their situation
-- Assure them there are no wrong answers
-- Ask for their first name to personalize conversation
+- Assure them there are no wrong answers, mention what language you support that is english and Hindi do not mention Hinglish here.
+- Use the student's name "${userName.split(" ")[0]}" throughout the conversation.
 Sample phrases:
-- "Hello! I'm your career counseling assistant, and I'm here to help you navigate your career path."
+- "Hello ${userName.split(" ")[0]}! I'm your career counseling assistant, and I'm here to help you navigate your career path."
 - "We'll go through some questions to understand your interests and concerns better."
-- "Before we begin, what's your first name?"
-Exit when: Student provides their name
+Exit when: Introduction is acknowledged
 
 ## 2) Academic_Status  
 Goal: Understand current education level and field
@@ -775,7 +784,7 @@ ${CareerState.isResuming && CareerState.completedQuestions.length > 0 ? `
 This is a RESUMED session. The student has already completed the following questions:
 ${CareerState.completedQuestions.map(q => `- ${q}`).join('\n')}
 
-Student's name: ${CareerState.studentName || 'Unknown'}
+Student's name: ${CareerState.studentName}
 
 DO NOT start from the beginning. Continue from the next unanswered question.
 The next question should be chosen from the remaining unanswered questions.
@@ -1598,8 +1607,16 @@ ${Object.entries(CareerState.responses).map(([qId, resp]) =>
             stopConversation();
         }
 
-        // Clear session on logout
+        // Clear all session data on logout
         clearSessionFromStorage();
+        
+        // Clear user session markers
+        localStorage.removeItem('user_session_active');
+        localStorage.removeItem('user_name');
+        localStorage.removeItem('user_email');
+        
+        // Clear sessionStorage
+        sessionStorage.clear();
 
         try {
             const response = await fetch('/api/logout', {

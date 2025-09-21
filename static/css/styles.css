@@ -151,6 +151,11 @@ body {
     display: block;
 }
 
+.required {
+    color: var(--danger-color);
+    font-weight: 600;
+}
+
 .btn-primary {
     padding: 14px 24px;
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));

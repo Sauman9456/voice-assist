@@ -3,49 +3,87 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('registrationForm');
     const nameInput = document.getElementById('name');
     const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
     const nameError = document.getElementById('nameError');
     const emailError = document.getElementById('emailError');
+    const passwordError = document.getElementById('passwordError');
     const submitButton = form.querySelector('button[type="submit"]');
     const buttonText = submitButton.querySelector('.btn-text');
     const buttonLoader = submitButton.querySelector('.btn-loading');
 
+    // Fixed password for validation
+    const CORRECT_PASSWORD = 'test@1234';
+
     // Form validation
     function validateName() {
         const name = nameInput.value.trim();
-        if (name.length < 2) {
-            nameError.textContent = 'Name must be at least 2 characters long';
-            nameError.classList.add('show');
+        if (!name) {
+            nameError.textContent = 'Name is required';
+            nameError.style.display = 'block';
             return false;
         }
-        nameError.classList.remove('show');
+        if (name.length < 2) {
+            nameError.textContent = 'Name must be at least 2 characters long';
+            nameError.style.display = 'block';
+            return false;
+        }
+        nameError.style.display = 'none';
         return true;
     }
 
     function validateEmail() {
         const email = emailInput.value.trim();
+        if (!email) {
+            emailError.textContent = 'Email is required';
+            emailError.style.display = 'block';
+            return false;
+        }
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             emailError.textContent = 'Please enter a valid email address';
-            emailError.classList.add('show');
+            emailError.style.display = 'block';
             return false;
         }
-        emailError.classList.remove('show');
+        emailError.style.display = 'none';
+        return true;
+    }
+
+    function validatePassword() {
+        const password = passwordInput.value;
+        if (!password) {
+            passwordError.textContent = 'Password is required';
+            passwordError.style.display = 'block';
+            return false;
+        }
+        if (password !== CORRECT_PASSWORD) {
+            passwordError.textContent = 'Please provide the correct password to continue.';
+            passwordError.style.display = 'block';
+            return false;
+        }
+        passwordError.style.display = 'none';
         return true;
     }
 
     // Real-time validation
     nameInput.addEventListener('blur', validateName);
     emailInput.addEventListener('blur', validateEmail);
+    passwordInput.addEventListener('blur', validatePassword);
     
     nameInput.addEventListener('input', function() {
-        if (nameError.classList.contains('show')) {
+        if (nameError.style.display === 'block') {
             validateName();
         }
     });
 
     emailInput.addEventListener('input', function() {
-        if (emailError.classList.contains('show')) {
+        if (emailError.style.display === 'block') {
             validateEmail();
+        }
+    });
+
+    passwordInput.addEventListener('input', function() {
+        if (passwordError.style.display === 'block') {
+            validatePassword();
         }
     });
 
@@ -53,11 +91,12 @@ document.addEventListener('DOMContentLoaded', function() {
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
 
-        // Validate form
+        // Validate all fields
         const isNameValid = validateName();
         const isEmailValid = validateEmail();
+        const isPasswordValid = validatePassword();
 
-        if (!isNameValid || !isEmailValid) {
+        if (!isNameValid || !isEmailValid || !isPasswordValid) {
             return;
         }
 
@@ -67,14 +106,23 @@ document.addEventListener('DOMContentLoaded', function() {
         buttonLoader.style.display = 'flex';
 
         try {
+            // Store user name in localStorage for persistence
+            const userName = nameInput.value.trim();
+            const userEmail = emailInput.value.trim();
+            
+            // Store in localStorage for career counselor to use
+            localStorage.setItem('user_name', userName);
+            localStorage.setItem('user_email', userEmail);
+            localStorage.setItem('user_session_active', 'true');
+            
             const response = await fetch('/api/register', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    name: nameInput.value.trim(),
-                    email: emailInput.value.trim()
+                    name: userName,
+                    email: userEmail
                 })
             });
 
