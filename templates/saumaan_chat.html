@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="user-name" content="{{ user_name }}">
+    <title>Saumaan's Portfolio Bot - Interactive Resume</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="chat-page">
+    <div class="app-container">
+        <!-- Left Animation Panel -->
+        <div class="left-panel">
+            <div class="animation-container">
+                <!-- Idle State Animation -->
+                <div class="animation-state idle active">
+                    <div class="orbit-container">
+                        <div class="orbit orbit-1"></div>
+                        <div class="orbit orbit-2"></div>
+                        <div class="orbit orbit-3"></div>
+                        <div class="core-sphere"></div>
+                    </div>
+                </div>
+                
+                <!-- User Speaking Animation -->
+                <div class="animation-state user-speaking">
+                    <div class="sound-waves">
+                        <div class="wave wave-1"></div>
+                        <div class="wave wave-2"></div>
+                        <div class="wave wave-3"></div>
+                        <div class="wave wave-4"></div>
+                        <div class="wave wave-5"></div>
+                    </div>
+                </div>
+                
+                <!-- AI Speaking Animation -->
+                <div class="animation-state ai-speaking">
+                    <div class="ai-pulse">
+                        <div class="pulse-ring ring-1"></div>
+                        <div class="pulse-ring ring-2"></div>
+                        <div class="pulse-ring ring-3"></div>
+                        <div class="ai-core">
+                            <div class="inner-glow"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Processing Animation -->
+                <div class="animation-state processing">
+                    <div class="processing-container">
+                        <div class="processing-dot dot-1"></div>
+                        <div class="processing-dot dot-2"></div>
+                        <div class="processing-dot dot-3"></div>
+                        <div class="processing-dot dot-4"></div>
+                        <div class="processing-dot dot-5"></div>
+                        <div class="processing-dot dot-6"></div>
+                        <div class="processing-dot dot-7"></div>
+                        <div class="processing-dot dot-8"></div>
+                    </div>
+                </div>
+                
+                <div class="status-label">Ready</div>
+            </div>
+            
+            <div class="panel-footer">
+                <button class="btn-logout" id="logoutBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                    Exit Session
+                </button>
+            </div>
+        </div>
+        
+        <!-- Main Chat Area -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>Saumaan's Portfolio Bot <span id="userNameBadge" style="font-size: 14px; font-weight: normal; margin-left: 10px;"></span></h2>
+                <div class="connection-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Disconnected</span>
+                </div>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages">
+                <!-- Welcome Message -->
+                <div class="message system-message">
+                    <div class="message-content">
+                        <p>Welcome to Saumaan's Interactive Portfolio!</p>
+                        <p style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">This is an AI-powered bot that represents Saumaan Momin's professional portfolio. Click "Start Conversation" to learn about his 6 years of experience in AI/ML, his projects, skills, and achievements. Perfect for professionals and recruiters looking to understand his capabilities.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-controls">
+                <button class="btn-control" id="startBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 01-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                    <span>Start Conversation</span>
+                </button>
+                
+                <button class="btn-control btn-danger" id="stopBtn" disabled>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+                    </svg>
+                    <span>Stop Conversation</span>
+                </button>
+            </div>
+            
+            <div class="error-container" id="errorContainer" style="display: none;">
+                <div class="error-message">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <span id="errorText"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden audio element for playback -->
+    <audio id="audioPlayer" autoplay style="display: none;"></audio>
+
+    <!-- Socket.IO for WebSocket communication -->
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/saumaan_chat.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/mobile_enhancements.js') }}"></script>
+</body>
+</html>

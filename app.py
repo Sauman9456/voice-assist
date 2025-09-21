@@ -619,6 +619,70 @@ def logout():
         session.clear()
     return jsonify({'success': True, 'redirect': url_for('register')})
 
+# Saumaan Personal Assistant Routes
+SAUMAAN_PASSWORD = '9456@100x@myself'  # In production, use environment variable
+
+@app.route('/100x-saumaan-assist')
+def saumaan_assist():
+    """Saumaan personal assistant - handles both login and chat interface"""
+    # Check if user is authenticated
+    if 'saumaan_authenticated' in session and session['saumaan_authenticated']:
+        # User is authenticated, show chat interface
+        user_name = session.get('saumaan_user_name', 'Guest')
+        return render_template('saumaan_chat.html', user_name=user_name)
+    else:
+        # User not authenticated, show login page
+        return render_template('saumaan_login.html')
+
+@app.route('/api/saumaan-login', methods=['POST'])
+def api_saumaan_login():
+    """Handle Saumaan assistant authentication"""
+    data = request.json
+    name = data.get('name', '').strip()
+    password = data.get('password', '')
+    
+    if not name:
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+    
+    # Validate password on backend
+    if password != SAUMAAN_PASSWORD:
+        return jsonify({'success': False, 'error': 'Invalid password'}), 401
+    
+    # Store authentication in session
+    session['saumaan_authenticated'] = True
+    session['saumaan_user_name'] = name
+    
+    logger.info(f"Saumaan assistant login successful for: {name}")
+    
+    return jsonify({
+        'success': True,
+        'user_name': name,
+        'redirect': '/100x-saumaan-assist'
+    })
+
+@app.route('/api/saumaan-logout', methods=['POST'])
+def api_saumaan_logout():
+    """Handle Saumaan assistant logout"""
+    # Clear Saumaan session
+    session.pop('saumaan_authenticated', None)
+    session.pop('saumaan_user_name', None)
+    
+    return jsonify({
+        'success': True,
+        'redirect': '/100x-saumaan-assist'
+    })
+
+@app.route('/api/saumaan-check-auth', methods=['GET'])
+def api_saumaan_check_auth():
+    """Check if user is authenticated for Saumaan assistant"""
+    is_authenticated = session.get('saumaan_authenticated', False)
+    user_name = session.get('saumaan_user_name', 'Guest')
+    
+    return jsonify({
+        'authenticated': is_authenticated,
+        'user_name': user_name
+    })
+
 # WebSocket events
 @socketio.on('connect')
 def handle_connect():
