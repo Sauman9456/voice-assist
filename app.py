@@ -690,7 +690,7 @@ def handle_career_progress():
     })
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
+    port = int(os.getenv('PORT', 8080))
     debug = os.getenv('FLASK_ENV', 'development') == 'development'
     
     # Check Azure Storage connectivity
