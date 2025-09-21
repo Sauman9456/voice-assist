@@ -518,7 +518,7 @@ I am strategically focused on advancing my expertise in three key domains:
             if (SaumaanState.isResuming) {
                 addMessage('system', "Welcome back! Let's continue our conversation about Saumaan's portfolio.");
             } else {
-                addMessage('system', "Connected! Saumaan's Portfolio Bot is ready. Please wait for my introduction...");
+                addMessage('system', "Connected! Saumaan's Portfolio Bot is ready. Please wait or ask for my introduction...");
             }
 
         } catch (error) {
