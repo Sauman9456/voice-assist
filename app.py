@@ -8,6 +8,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import logging
 from pathlib import Path
+import time
 
 # Load environment variables
 load_dotenv()
@@ -31,6 +32,10 @@ logger = logging.getLogger(__name__)
 # Create sessions directory if it doesn't exist
 SESSIONS_DIR = Path('sessions')
 SESSIONS_DIR.mkdir(exist_ok=True)
+
+# Create career summaries directory
+CAREER_DIR = Path('sessions/career_summaries')
+CAREER_DIR.mkdir(exist_ok=True, parents=True)
 
 # Session management
 class SessionManager:
@@ -111,6 +116,134 @@ class SessionManager:
 
 # Initialize session manager
 session_manager = SessionManager()
+
+# Career Counseling Session Management
+class CareerCounselingManager:
+    def __init__(self):
+        self.career_sessions = {}
+        self.paused_sessions = {}
+    
+    def create_career_session(self, user_id, user_name, user_email):
+        """Create a new career counseling session"""
+        career_session_id = f"career_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        
+        self.career_sessions[career_session_id] = {
+            'id': career_session_id,
+            'user_id': user_id,
+            'user_name': user_name,
+            'user_email': user_email,
+            'start_time': datetime.now(),
+            'completed_questions': [],
+            'responses': {},
+            'state': 'active',
+            'emotional_trajectory': []
+        }
+        
+        logger.info(f"Created career counseling session {career_session_id} for {user_name}")
+        return career_session_id
+    
+    def save_response(self, career_session_id, question_id, response, emotion=None):
+        """Save a student's response to a question"""
+        if career_session_id not in self.career_sessions:
+            return False
+        
+        session = self.career_sessions[career_session_id]
+        session['responses'][question_id] = {
+            'response': response,
+            'timestamp': datetime.now().isoformat(),
+            'emotion': emotion or 'neutral'
+        }
+        
+        if question_id not in session['completed_questions']:
+            session['completed_questions'].append(question_id)
+        
+        if emotion:
+            session['emotional_trajectory'].append({
+                'question_id': question_id,
+                'emotion': emotion,
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        return True
+    
+    def pause_session(self, career_session_id, current_question=None):
+        """Pause a career counseling session"""
+        if career_session_id not in self.career_sessions:
+            return False
+        
+        session = self.career_sessions[career_session_id]
+        session['state'] = 'paused'
+        session['paused_at'] = datetime.now().isoformat()
+        session['current_question'] = current_question
+        
+        # Move to paused sessions
+        self.paused_sessions[career_session_id] = session
+        del self.career_sessions[career_session_id]
+        
+        logger.info(f"Paused career session {career_session_id}")
+        return True
+    
+    def resume_session(self, career_session_id):
+        """Resume a paused career counseling session"""
+        if career_session_id not in self.paused_sessions:
+            return None
+        
+        session = self.paused_sessions[career_session_id]
+        session['state'] = 'active'
+        session['resumed_at'] = datetime.now().isoformat()
+        
+        # Move back to active sessions
+        self.career_sessions[career_session_id] = session
+        del self.paused_sessions[career_session_id]
+        
+        logger.info(f"Resumed career session {career_session_id}")
+        return session
+    
+    def save_summary(self, career_session_id, summary_data):
+        """Save career counseling summary to file"""
+        if career_session_id not in self.career_sessions:
+            return None
+        
+        session = self.career_sessions[career_session_id]
+        
+        # Create filename
+        safe_email = session['user_email'].replace('@', '_at_').replace('.', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        summary_file = CAREER_DIR / f"{safe_email}_{timestamp}_summary.json"
+        
+        # Prepare complete summary
+        complete_summary = {
+            'session_id': career_session_id,
+            'user': {
+                'name': session['user_name'],
+                'email': session['user_email']
+            },
+            'timing': {
+                'start': session['start_time'].isoformat(),
+                'end': datetime.now().isoformat(),
+                'duration_minutes': int((datetime.now() - session['start_time']).total_seconds() / 60)
+            },
+            'questions_answered': len(session['completed_questions']),
+            'completed_questions': session['completed_questions'],
+            'responses': session['responses'],
+            'emotional_trajectory': session['emotional_trajectory'],
+            'analysis': summary_data.get('session_data', {}),
+            'recommendations': summary_data.get('recommendations', [])
+        }
+        
+        # Save to file
+        try:
+            with open(summary_file, 'w', encoding='utf-8') as f:
+                json.dump(complete_summary, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Saved career summary to {summary_file}")
+            return str(summary_file)
+        except Exception as e:
+            logger.error(f"Error saving career summary: {e}")
+            return None
+
+# Initialize career counseling manager
+career_manager = CareerCounselingManager()
 
 # Routes
 @app.route('/')
@@ -199,6 +332,181 @@ def handle_state_change(data):
     """Handle state changes for animation updates"""
     state = data.get('state', 'idle')
     emit('animation_state', {'state': state}, broadcast=True)
+
+# Career Counseling WebSocket Events
+@socketio.on('career_start')
+def handle_career_start():
+    """Initialize a career counseling session"""
+    user_id = session.get('user_id')
+    user_name = session.get('user_name')
+    user_email = session.get('user_email')
+    
+    if not user_id:
+        emit('career_error', {'error': 'User not authenticated'})
+        return
+    
+    # Create career counseling session
+    career_session_id = career_manager.create_career_session(user_id, user_name, user_email)
+    session['career_session_id'] = career_session_id
+    
+    # Log the start
+    session_manager.log_conversation(user_id, 'System', 'Started career counseling session')
+    
+    emit('career_started', {
+        'success': True,
+        'career_session_id': career_session_id,
+        'message': 'Career counseling session initialized'
+    })
+    
+    logger.info(f"Started career counseling for {user_name} ({career_session_id})")
+
+@socketio.on('career_response')
+def handle_career_response(data):
+    """Handle career counseling survey responses"""
+    career_session_id = session.get('career_session_id')
+    user_id = session.get('user_id')
+    
+    if not career_session_id:
+        emit('career_error', {'error': 'No active career counseling session'})
+        return
+    
+    question_id = data.get('question_id')
+    response = data.get('response')
+    emotion = data.get('emotion', 'neutral')
+    
+    # Save the response
+    success = career_manager.save_response(career_session_id, question_id, response, emotion)
+    
+    if success:
+        # Log to main session
+        session_manager.log_conversation(
+            user_id, 
+            'Career Response', 
+            f"Q:{question_id} - A:{response[:100]}..."
+        )
+        
+        emit('career_response_saved', {
+            'success': True,
+            'question_id': question_id,
+            'questions_completed': len(career_manager.career_sessions[career_session_id]['completed_questions'])
+        })
+    else:
+        emit('career_error', {'error': 'Failed to save response'})
+
+@socketio.on('career_pause')
+def handle_career_pause(data):
+    """Pause the career counseling session"""
+    career_session_id = session.get('career_session_id')
+    
+    if not career_session_id:
+        emit('career_error', {'error': 'No active career counseling session'})
+        return
+    
+    current_question = data.get('current_question')
+    success = career_manager.pause_session(career_session_id, current_question)
+    
+    if success:
+        emit('career_paused', {
+            'success': True,
+            'career_session_id': career_session_id,
+            'message': 'Session paused. You can resume anytime.'
+        })
+        logger.info(f"Paused career session {career_session_id}")
+    else:
+        emit('career_error', {'error': 'Failed to pause session'})
+
+@socketio.on('career_resume')
+def handle_career_resume(data):
+    """Resume a paused career counseling session"""
+    career_session_id = data.get('career_session_id')
+    
+    if not career_session_id:
+        # Try to find by user
+        user_email = session.get('user_email')
+        for sid, sess in career_manager.paused_sessions.items():
+            if sess['user_email'] == user_email:
+                career_session_id = sid
+                break
+    
+    if not career_session_id:
+        emit('career_error', {'error': 'No paused session found'})
+        return
+    
+    resumed_session = career_manager.resume_session(career_session_id)
+    
+    if resumed_session:
+        session['career_session_id'] = career_session_id
+        
+        emit('career_resumed', {
+            'success': True,
+            'career_session_id': career_session_id,
+            'current_question': resumed_session.get('current_question'),
+            'completed_questions': resumed_session['completed_questions'],
+            'message': 'Session resumed successfully'
+        })
+        logger.info(f"Resumed career session {career_session_id}")
+    else:
+        emit('career_error', {'error': 'Failed to resume session'})
+
+@socketio.on('career_summary')
+def handle_career_summary(data):
+    """Save career counseling summary"""
+    career_session_id = session.get('career_session_id') or data.get('session_id')
+    user_id = session.get('user_id')
+    
+    if not career_session_id or career_session_id not in career_manager.career_sessions:
+        emit('career_error', {'error': 'No active career counseling session'})
+        return
+    
+    # Save the summary
+    summary_file = career_manager.save_summary(career_session_id, data)
+    
+    if summary_file:
+        # Log to main session
+        total_questions = data.get('total_questions_answered', 0)
+        session_manager.log_conversation(
+            user_id,
+            'Career Summary',
+            f"Completed career counseling with {total_questions} questions answered"
+        )
+        
+        emit('summary_saved', {
+            'success': True,
+            'file': summary_file,
+            'message': 'Career counseling summary saved successfully'
+        })
+        
+        # Clean up the career session
+        del career_manager.career_sessions[career_session_id]
+        if 'career_session_id' in session:
+            del session['career_session_id']
+        
+        logger.info(f"Saved career summary for session {career_session_id}")
+    else:
+        emit('career_error', {'error': 'Failed to save summary'})
+
+@socketio.on('career_progress')
+def handle_career_progress():
+    """Get current career counseling progress"""
+    career_session_id = session.get('career_session_id')
+    
+    if not career_session_id or career_session_id not in career_manager.career_sessions:
+        emit('career_progress', {
+            'active': False,
+            'questions_completed': 0,
+            'responses': {}
+        })
+        return
+    
+    session_data = career_manager.career_sessions[career_session_id]
+    
+    emit('career_progress', {
+        'active': True,
+        'career_session_id': career_session_id,
+        'questions_completed': len(session_data['completed_questions']),
+        'completed_questions': session_data['completed_questions'],
+        'emotional_trajectory': session_data['emotional_trajectory']
+    })
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
