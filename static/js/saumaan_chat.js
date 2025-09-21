@@ -53,20 +53,23 @@ document.addEventListener('DOMContentLoaded', function() {
         isResuming: false,
         conversationHistory: [],
         sessionStartTime: null,
-        sessionActive: false
+        sessionActive: false,
+        responses: {},  // Store detailed responses
+        completedTopics: []  // Track discussed topics
     };
 
     // Fixed HR Responses
     const HRResponses = {
-        life_story: "I'm a 28-year-old data scientist from Mumbai with 6 years of industry experience. Started my journey as a data engineer intern at Dell, then worked through various roles at EC Infosolutions, TomTom, and Paytm. Currently serving as a Senior NLP Engineer at FuturePath AI, specializing in building cutting-edge AI systems. My journey has been about constantly pushing boundaries - from developing predictive models for animal health to building multi-agent AI systems that automate enterprise operations. Outside work, I'm passionate about traveling, biking through scenic routes, and exploring different movie genres.",
-        
-        superpower: "My #1 superpower is breaking down complex AI/ML problems into simple, implementable solutions. I have this ability to see patterns in data that others might miss, and I can translate highly technical concepts into business value. Whether it's speeding up processes by 20x or improving prediction accuracy by 30%, I focus on delivering tangible results.",
-        
-        growth_areas: "Three key areas I'm focusing on: First, deepening my expertise in LLM optimization and fine-tuning techniques - this field is evolving rapidly and I want to stay at the forefront. Second, building more scalable AI infrastructure that can handle enterprise-level deployments. Third, developing my leadership and mentoring skills to help build stronger AI teams.",
-        
-        misconception: "People often think I'm all about the tech and algorithms, but I'm equally passionate about the human side of technology. I believe the best AI solutions come from deeply understanding user needs and making technology accessible to everyone. My coworkers sometimes don't realize how much I enjoy collaborative brainstorming and teaching others about AI.",
-        
-        push_boundaries: "I constantly push my boundaries by taking on projects that initially seem impossible. At TomTom, everyone said automating map editing tasks couldn't be done efficiently - I proved them wrong with a 20x speed improvement. I also experiment with new technologies regularly, participate in AI research, and never settle for 'good enough' solutions. I believe in learning by doing, even if it means failing fast and iterating."
+        life_story: `I'm a Senior NLP Engineer with a rich 6-year journey of transforming complex data into impactful business solutions. My career began with a strong data engineering foundation at **Dell**, which evolved into senior data science roles at **EC Infosolutions**, **TomTom**, and **Paytm**. My ability to rapidly learn and apply new technologies has been central to my career progression, allowing me to move from building robust data pipelines to architecting and deploying sophisticated AI systems. Currently, at **FuturePath AI**, I lead the development of multi-agent LLM systems that automate enterprise-level operations. My career has been a story of leveraging cutting-edge AI to solve real-world problems, whether it was developing predictive models for animal health or building AI copilots for major financial platforms. Outside of work, I'm an avid traveler and biker, always seeking new routes and fresh perspectives.`,
+        superpower: `My core strength is my ability to rapidly master new techniques and architect end-to-end solutions that generate significant business value. I am a fast learner, which allows me to quickly move from concept to production, whether it's with a new LLM, a vector database, or a complex framework. This agility was key at TomTom, where I conceptualized and built an automated task-serving model using LLMs and Graph Analytics, **accelerating the process by over 20x** and **boosting editor productivity by 28%**. My superpower isn't just about solving problems; it's about quickly adopting the best possible technology to deliver measurable improvements and tangible ROI.`,
+        growth_areas: `
+I am strategically focused on advancing my expertise in three key domains:
+1.  **Scaling Enterprise AI:** My aptitude for quickly learning allows me to stay at the forefront of AI. I am deepening my knowledge of the latest LLM optimization, fine-tuning, and advanced RAG techniques to build highly efficient and scalable AI infrastructure.
+2.  **Product Leadership & Strategy:** Building on my experience as a Product Owner, I am focused on mastering the entire product lifecycle—from client-facing discovery and project budgeting to resource management and stakeholder reporting—to drive AI initiatives that align perfectly with business objectives.
+3.  **Mentoring and Team Building:** I am passionate about cultivating talent and am actively honing my leadership skills to mentor emerging engineers, helping them accelerate their own learning curves and build collaborative, high-performing AI teams.
+`,
+        misconception: `While my work is deeply rooted in complex algorithms and my ability to quickly adopt new technologies is evident, some might think I'm purely tech-focused. However, I am equally driven by the human-centric aspect of technology. My experience presenting to business stakeholders at TomTom (including Apple, Microsoft, and Uber) and leading client-facing projects has taught me that the most successful AI solutions are born from a deep understanding of user needs. I excel at bridging the gap between technical teams and business leaders and genuinely enjoy mentoring colleagues and fostering a collaborative environment.`,
+        push_boundaries: `I am consistently drawn to projects that challenge the status quo, confident in my ability to learn whatever is necessary to succeed. A prime example is the **Agent-Assist project**, where I quickly mastered and designed a complex multi-agent system from the ground up, integrating various LLMs (GPT-4o, Llama 3.1) and vector databases. At TomTom, I tackled a challenge many thought was too complex: automating map editing assignments. My ability to rapidly prototype and iterate with emerging NLP techniques was crucial in developing the **"Auto-Serving of tasks"** system. I thrive on this process of turning "impossible" ideas into functional, high-impact realities.`
     };
 
     // Saumaan's Detailed Resume Data
@@ -191,13 +194,20 @@ document.addEventListener('DOMContentLoaded', function() {
         // Initialize Saumaan Portfolio Bot
         initializeSaumaan();
 
-        // Load previous session if exists
-        loadSessionState();
+        // Clear old sessions on fresh login
+        clearOldSessionOnLogin();
 
         // Set up event listeners
-        startBtn.addEventListener('click', startConversation);
+        startBtn.addEventListener('click', handleStartSession);
         stopBtn.addEventListener('click', stopConversation);
         logoutBtn.addEventListener('click', handleLogout);
+        
+        // Listen for page unload to save state
+        window.addEventListener('beforeunload', () => {
+            if (isConnected) {
+                saveSessionToStorage();
+            }
+        });
     }
 
     // Initialize Saumaan Portfolio Bot
@@ -216,32 +226,162 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Load session state
-    function loadSessionState() {
-        const savedState = localStorage.getItem('saumaan_session_state');
-        if (savedState) {
-            try {
-                const state = JSON.parse(savedState);
-                if (state.sessionId && state.conversationHistory) {
-                    SaumaanState.conversationHistory = state.conversationHistory || [];
-                    SaumaanState.isResuming = true;
-                    console.log('Loaded previous session:', state.sessionId);
+    // Clear old sessions on fresh login
+    function clearOldSessionOnLogin() {
+        // Check if user session is active (set during authentication)
+        const userSessionActive = localStorage.getItem('saumaan_user_session_active');
+        
+        // If no active session marker, this is a fresh login
+        if (!userSessionActive) {
+            // Clear all saumaan session data from localStorage
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.startsWith('saumaan_session_') || 
+                    key.startsWith('saumaan_summary_') || 
+                    key.startsWith('saumaan_paused_')) {
+                    localStorage.removeItem(key);
                 }
-            } catch (error) {
-                console.error('Error loading session state:', error);
+            });
+            
+            console.log('Cleared old sessions for fresh login');
+        }
+        
+        // Set the active session marker
+        localStorage.setItem('saumaan_user_session_active', 'true');
+    }
+
+    // Handle Start Session button click
+    async function handleStartSession() {
+        // Check for existing session in localStorage
+        const savedSession = loadSessionFromStorage();
+        
+        if (savedSession && savedSession.conversationHistory && savedSession.conversationHistory.length > 0) {
+            // Session found - ask user if they want to resume
+            const shouldResume = confirm(
+                `Found a previous conversation session.\n\n` +
+                `Would you like to resume from where you left off?\n\n` +
+                `Click OK to resume, Cancel to start fresh.`
+            );
+            
+            if (shouldResume) {
+                // Resume existing session
+                resumeExistingSession(savedSession);
+            } else {
+                // User chose to start fresh - clear everything and reset state
+                clearSessionFromStorage();
+                resetSaumaanState();
+                clearChatHistory();
+                await startConversation();
             }
+        } else {
+            // No existing session - start fresh
+            await startConversation();
         }
     }
 
-    // Save session state
-    function saveSessionState() {
-        const stateToSave = {
-            sessionId: SaumaanState.sessionId,
-            conversationHistory: SaumaanState.conversationHistory,
-            userName: SaumaanState.userName,
-            timestamp: Date.now()
+    // Resume existing session
+    function resumeExistingSession(savedSession) {
+        // Restore the saved state
+        Object.assign(SaumaanState, savedSession);
+        
+        // Mark that we're resuming a session
+        SaumaanState.isResuming = true;
+        
+        // Show resume message
+        addMessage('system', `Welcome back! Resuming your previous conversation.`);
+        
+        // Display previous chat history in chat
+        if (savedSession.chatHistory && savedSession.chatHistory.length > 0) {
+            savedSession.chatHistory.forEach(msg => {
+                addMessage(msg.type, msg.text);
+            });
+        }
+        
+        // Now start the conversation with the restored state
+        startConversation();
+    }
+
+    // Save session to localStorage
+    function saveSessionToStorage() {
+        const sessionData = {
+            ...SaumaanState,
+            timestamp: new Date().toISOString(),
+            chatHistory: getChatHistory()
         };
-        localStorage.setItem('saumaan_session_state', JSON.stringify(stateToSave));
+        
+        localStorage.setItem('saumaan_session_active', JSON.stringify(sessionData));
+        console.log('Session saved to storage');
+    }
+
+    // Load session from localStorage
+    function loadSessionFromStorage() {
+        const savedData = localStorage.getItem('saumaan_session_active');
+        if (savedData) {
+            try {
+                return JSON.parse(savedData);
+            } catch (error) {
+                console.error('Error loading saved session:', error);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    // Clear session from localStorage
+    function clearSessionFromStorage() {
+        localStorage.removeItem('saumaan_session_active');
+        console.log('Session cleared from storage');
+    }
+    
+    // Reset Saumaan State to initial values
+    function resetSaumaanState() {
+        SaumaanState.sessionId = generateSessionId();
+        SaumaanState.userName = localStorage.getItem('saumaan_user_name') || null;
+        SaumaanState.currentLanguage = 'english';
+        SaumaanState.previousLanguage = 'english';
+        SaumaanState.isResuming = false;
+        SaumaanState.conversationHistory = [];
+        SaumaanState.sessionStartTime = null;
+        SaumaanState.sessionActive = false;
+        SaumaanState.responses = {};
+        SaumaanState.completedTopics = [];
+        console.log('Saumaan state reset to initial values');
+    }
+    
+    // Clear chat history from UI
+    function clearChatHistory() {
+        chatMessages.innerHTML = '';
+        console.log('Chat history cleared');
+    }
+
+    // Get chat history for saving
+    function getChatHistory() {
+        const messages = chatMessages.querySelectorAll('.message');
+        const history = [];
+        
+        messages.forEach(msg => {
+            if (!msg.classList.contains('system-message')) {
+                const content = msg.querySelector('.message-content');
+                if (content) {
+                    let type = 'user';
+                    if (msg.classList.contains('bot-message')) {
+                        type = 'assistant';
+                    }
+                    history.push({
+                        type: type,
+                        text: content.textContent
+                    });
+                }
+            }
+        });
+        
+        return history;
+    }
+
+    // Save session state (deprecated - use saveSessionToStorage instead)
+    function saveSessionState() {
+        // Redirect to the new localStorage-based function
+        saveSessionToStorage();
     }
 
     // Generate unique session ID
@@ -451,10 +591,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 voice: "ash",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
-                input_audio_transcription: {
-                    model: "gpt-4o-transcribe",
-                    prompt: "Two language Hindi & Englsi"
-                },
+                // input_audio_transcription: {
+                //     model: "gpt-4o-transcribe",
+                //     language: (SaumaanState.currentLanguage || "english").toLowerCase() === "hinglish" ? "hi" : "en"
+                // },
                 input_audio_noise_reduction: {
                     type: "far_field"
                 },
@@ -468,11 +608,39 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         sendMessage(sessionUpdate);
         
-        // Send initial greeting if not greeted yet
+        // If resuming, send context about the session
+        if (SaumaanState.isResuming) {
+            // Create a context message to inform the AI about the resumed state
+            const resumeContext = {
+                type: "conversation.item.create",
+                item: {
+                    type: "message",
+                    role: "system",
+                    content: [{
+                        type: "input_text",
+                        text: `IMPORTANT: This is a RESUMED session. The user has returned to continue their previous conversation. ` +
+                              `Previous topics discussed: ${SaumaanState.completedTopics.join(', ') || 'general introduction'}. ` +
+                              `Do not restart with a full introduction. Continue naturally from where the conversation left off. ` +
+                              `Acknowledge their return briefly and continue the conversation.`
+                    }]
+                }
+            };
+            sendMessage(resumeContext);
+            
+            // Reset the resuming flag
+            SaumaanState.isResuming = false;
+        }
+        
+        // Send initial greeting if not greeted yet and not resuming
         if (!hasGreeted && !SaumaanState.isResuming) {
             setTimeout(() => {
                 sendMessage({ type: "response.create" });
                 hasGreeted = true;
+            }, 500);
+        } else if (SaumaanState.isResuming) {
+            // If resuming, trigger a response
+            setTimeout(() => {
+                sendMessage({ type: "response.create" });
             }, 500);
         }
     }
@@ -582,8 +750,7 @@ When asked about:
 6. If asked about salary: "My expectation is 50 lakhs INR per annum, but I'm open to discussion based on the role and growth opportunities"
 7. For technical questions, provide depth while keeping it understandable.
 8. Only response what user have asked, to the point and concise. Do not provide long response. You must Response in ${((SaumaanState.currentLanguage || 'english').toUpperCase())}
-9. In case of Hinglish or Hindi language, you must write Hindi with English words i.e., English alphabet because Hindi text are not supported. It's a constrain keep this in mind. You must response in - Current Language: ${SaumaanState.currentLanguage.toUpperCase()}
-10. If user ask to change the language change it. 
+9. In case of Hinglish or Hindi language, you must write Hindi with English words i.e., English alphabet because Hindi text are not supported. It's a constrain keep this in mind.
 11. Only respond to clear audio or text. If audio is unclear/partial/noisy/silent, ask for clarification, never response to incomplete, unclear inputs ask clarification 
 12. Along with the Saumaan's resume and your knowledge response to the user because we want this platfrom to be entertaining & engaging.
 
@@ -591,9 +758,8 @@ When asked about:
 # TOOLS USAGE
 - detect_user_language: For every user input
 - provide_portfolio_details: For specific career information
-- schedule_interview: If HR wants to schedule a meeting
-- stop_conversation: When pausing
-- exit_session: When ending
+- stop_conversation: When User says to pause/stop/take break or similar
+- exit_session: When User says end session/quit/exit/logout or similar
 
 Remember: You're representing Saumaan's professional portfolio. Be impressive but authentic!
 `;
@@ -653,38 +819,11 @@ Remember: You're representing Saumaan's professional portfolio. Be impressive bu
             },
             {
                 type: "function",
-                name: "schedule_interview",
-                description: "When HR wants to schedule an interview or follow-up meeting with Saumaan.",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        hr_name: {
-                            type: "string",
-                            description: "Name of the HR person"
-                        },
-                        company: {
-                            type: "string",
-                            description: "Company name"
-                        },
-                        preferred_time: {
-                            type: "string",
-                            description: "Preferred time for interview"
-                        }
-                    },
-                    required: ["hr_name"]
-                }
-            },
-            {
-                type: "function",
                 name: "stop_conversation",
-                description: "Stop the conversation when user wants to pause or take a break. Session will be saved.",
+                description: "Stop the conversation when user wants to pause, stop, or take a break. This ends the current session but preserves data.",
                 parameters: {
                     type: "object",
                     properties: {
-                        reason: {
-                            type: "string",
-                            description: "Reason for stopping"
-                        },
                         save_session: {
                             type: "boolean",
                             description: "Whether to save session for resuming later"
@@ -696,7 +835,7 @@ Remember: You're representing Saumaan's professional portfolio. Be impressive bu
             {
                 type: "function",
                 name: "exit_session",
-                description: "Exit the session completely when user says quit, exit, logout, or end session.",
+                description: "Trigger exit session when user says quit, exit, logout, or similar commands. This will end the session and log the user out.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -822,9 +961,6 @@ Remember: You're representing Saumaan's professional portfolio. Be impressive bu
                 case 'provide_portfolio_details':
                     result = providePortfolioDetails(args);
                     break;
-                case 'schedule_interview':
-                    result = handleScheduleInterview(args);
-                    break;
                 case 'stop_conversation':
                     result = handleStopConversation(args);
                     break;
@@ -891,12 +1027,20 @@ Previous Experience:
 ${SaumaanData.employment.previous.map(job => 
 `• ${job.company} - ${job.position} (${job.period})`
 ).join('\n')}`;
+                // Track this topic as discussed
+                if (!SaumaanState.completedTopics.includes('employment')) {
+                    SaumaanState.completedTopics.push('employment');
+                }
                 break;
             
             case 'education':
                 detailsContent = `
 Masters: ${SaumaanData.education.masters}
 Bachelors: ${SaumaanData.education.bachelors}`;
+                // Track this topic as discussed
+                if (!SaumaanState.completedTopics.includes('education')) {
+                    SaumaanState.completedTopics.push('education');
+                }
                 break;
             
             case 'skills':
@@ -906,6 +1050,10 @@ LLM/AI Tools: ${SaumaanData.skills.llm_tools.join(', ')}
 Frameworks: ${SaumaanData.skills.frameworks.join(', ')}
 Cloud: ${SaumaanData.skills.cloud_platforms.join(', ')}
 Techniques: ${SaumaanData.skills.techniques.join(', ')}`;
+                // Track this topic as discussed
+                if (!SaumaanState.completedTopics.includes('skills')) {
+                    SaumaanState.completedTopics.push('skills');
+                }
                 break;
             
             case 'projects':
@@ -919,6 +1067,10 @@ Techniques: ${SaumaanData.skills.techniques.join(', ')}`;
    - ${SaumaanData.projects.auto_serving.description}
    - Tech: ${SaumaanData.projects.auto_serving.tech_stack.join(', ')}
    - Impact: ${SaumaanData.projects.auto_serving.impact}`;
+                // Track this topic as discussed
+                if (!SaumaanState.completedTopics.includes('projects')) {
+                    SaumaanState.completedTopics.push('projects');
+                }
                 break;
             
             case 'achievements':
@@ -930,11 +1082,22 @@ Key Achievements with Metrics:
 • 88% accuracy in predictive models for animal health
 • STAR AWARD for Customer Sentiment Analysis
 • 21-30% improvement in prediction accuracy across projects`;
+                // Track this topic as discussed
+                if (!SaumaanState.completedTopics.includes('achievements')) {
+                    SaumaanState.completedTopics.push('achievements');
+                }
                 break;
             
             default:
                 detailsContent = "Complete portfolio information available upon request.";
         }
+        
+        // Store the response
+        SaumaanState.responses[category] = {
+            response: detailsContent,
+            query: specific_query,
+            timestamp: new Date().toISOString()
+        };
         
         // Add conversation to history
         SaumaanState.conversationHistory.push({
@@ -942,7 +1105,9 @@ Key Achievements with Metrics:
             category: category,
             query: specific_query
         });
-        saveSessionState();
+        
+        // Save session state after each response
+        saveSessionToStorage();
         
         return {
             success: true,
@@ -953,47 +1118,26 @@ Key Achievements with Metrics:
         };
     }
 
-    function handleScheduleInterview(params) {
-        const { hr_name, company, preferred_time } = params;
-        
-        // Log interview request
-        console.log('Interview request:', { hr_name, company, preferred_time });
-        
-        // Add to conversation history
-        SaumaanState.conversationHistory.push({
-            timestamp: Date.now(),
-            type: 'interview_request',
-            hr_name: hr_name,
-            company: company,
-            preferred_time: preferred_time
-        });
-        saveSessionState();
-        
-        return {
-            success: true,
-            message: `Interview request noted for ${hr_name}${company ? ` from ${company}` : ''}`,
-            preferred_time: preferred_time,
-            contact_info: "saumanmomin@gmail.com"
-        };
-    }
 
     function handleStopConversation(params) {
-        const { reason, save_session = true } = params;
+        const { save_session = true } = params;
         
         if (save_session) {
-            saveSessionState();
+            saveSessionToStorage();
         }
         
         // Schedule stop after sending response
         setTimeout(() => {
+            if (currentAnimationState !== AnimationStates.AI_SPEAKING){
             stopConversation();
-        }, 1000);
+            }
+        }, 500);
         
         return {
             success: true,
             conversation_stopped: true,
             session_saved: save_session,
-            message: "Conversation paused. You can resume anytime."
+            // message: "Conversation paused. You can resume anytime."
         };
     }
 
@@ -1005,14 +1149,16 @@ Key Achievements with Metrics:
         }
         
         if (clear_session) {
-            localStorage.removeItem('saumaan_session_state');
+            clearSessionFromStorage();
         } else {
-            saveSessionState();
+            saveSessionToStorage();
         }
         
         setTimeout(() => {
+            if (currentAnimationState !== AnimationStates.AI_SPEAKING){
             handleLogout();
-        }, 2000);
+            }
+        }, 500);
         
         return {
             success: true,
@@ -1055,6 +1201,9 @@ Key Achievements with Metrics:
                     message: message.transcript
                 });
                 
+                // Save session state after user input
+                saveSessionToStorage();
+                
                 console.log('User transcript:', message.transcript);
             }
         }
@@ -1080,7 +1229,8 @@ Key Achievements with Metrics:
                 SaumaanState.conversationHistory = SaumaanState.conversationHistory.slice(-30);
             }
             
-            saveSessionState();
+            // Save session state after each AI response
+            saveSessionToStorage();
         }
     }
 
@@ -1137,10 +1287,16 @@ Key Achievements with Metrics:
         updateConnectionStatus('Disconnected');
         setAnimationState(AnimationStates.IDLE);
         
-        // Save session state for resuming
-        saveSessionState();
+        // Save final state to localStorage for resumption
+        saveSessionToStorage();
         
-        addMessage('system', 'Conversation paused. Your session has been saved. Click "Start Conversation" to resume.');
+        // Show session summary
+        const topicsDiscussed = SaumaanState.completedTopics.length;
+        if (topicsDiscussed > 0) {
+            addMessage('system', `Conversation paused. Discussed ${topicsDiscussed} topic(s): ${SaumaanState.completedTopics.join(', ')}. Your session has been saved. Click "Start Conversation" to resume.`);
+        } else {
+            addMessage('system', 'Conversation paused. Your session has been saved. Click "Start Conversation" to resume.');
+        }
     }
 
     // Handle logout
@@ -1149,12 +1305,15 @@ Key Achievements with Metrics:
             stopConversation();
         }
 
-        // Clear session data if needed
-        const clearAll = confirm('Do you want to clear your saved session data?');
-        if (clearAll) {
-            localStorage.removeItem('saumaan_session_state');
-            localStorage.removeItem('saumaan_user_name');
-        }
+        // Clear all session data on logout
+        clearSessionFromStorage();
+        
+        // Clear user session markers
+        localStorage.removeItem('saumaan_user_session_active');
+        localStorage.removeItem('saumaan_user_name');
+        
+        // Clear sessionStorage
+        sessionStorage.clear();
 
         // Logout from backend
         try {

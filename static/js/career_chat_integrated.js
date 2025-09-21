@@ -1042,7 +1042,7 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
                         if (currentAnimationState === AnimationStates.PROCESSING) {
                             setAnimationState(AnimationStates.IDLE);
                         }
-                    }, 1500); // 1.5 second processing time
+                    }, 8000); // 0.8 second processing time
                     break;
                 case "conversation.item.input_audio_transcription.completed":
                     handleUserTranscript(message);
@@ -1365,12 +1365,18 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
         }
         
         // Call the existing stopConversation function
-        stopConversation();
+        // stopConversation();
+        setTimeout(() => {
+            if (currentAnimationState !== AnimationStates.AI_SPEAKING){
+            stopConversation();
+            }
+        }, 500);
         
         return {
             success: true,
             conversation_stopped: true,
-            progress_saved: save_progress
+            progress_saved: save_progress,
+            // message: "Conversation paused. You can resume anytime."
         };
     }
     
@@ -1578,7 +1584,12 @@ Previous responses: ${Object.entries(CareerState.responses).map(([q,r]) => `${q}
     // Handle logout
     async function handleLogout() {
         if (isConnected) {
+            // stopConversation();
+            setTimeout(() => {
+            if (currentAnimationState !== AnimationStates.AI_SPEAKING){
             stopConversation();
+            }
+        }, 500);
         }
 
         // Clear all session data on logout
